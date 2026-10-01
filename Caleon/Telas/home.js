@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 import {
+	Alert,
 	SafeAreaView,
 	ScrollView,
 	StyleSheet,
@@ -9,11 +10,12 @@ import {
 	TouchableOpacity,
 	View,
 } from 'react-native';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import Octicons from '@expo/vector-icons/Octicons';
 import { auth } from '../Config/FireBaseConfig';
 
 const colors = {
-	green: '#075841',
-	brightGreen: '#07945d',
+	green: '#1B4B3D',
 	ink: '#111715',
 	muted: '#75807c',
 	surface: '#f5f7f7',
@@ -61,12 +63,21 @@ function ProductSection({ title }) {
 	);
 }
 
-export default function Home() {
+export default function Home({ navigation }) {
 	const [userName, setUserName] = useState('usuário');
 
 	useEffect(() => onAuthStateChanged(auth, (user) => {
 		setUserName(user?.displayName?.trim() || 'usuário');
 	}), []);
+
+	async function handleSignOut() {
+		try {
+			await signOut(auth);
+			navigation.replace('TelaLogin');
+		} catch {
+			Alert.alert('Sair', 'Não foi possível encerrar sua sessão. Tente novamente.');
+		}
+	}
 
 	return (
 		<SafeAreaView style={styles.safeArea}>
@@ -74,11 +85,20 @@ export default function Home() {
 				<View style={styles.locationIcon}><Text style={styles.pin}>⌖</Text></View>
 				<View style={styles.locationText}>
 					<Text style={styles.greeting} numberOfLines={1}>Olá, {userName}</Text>
-					<Text style={styles.address}>R. Joaquim Nabuco, 131 - Fátima</Text>
+					<Text style={styles.address} numberOfLines={1}>R. Joaquim Nabuco, 131 - Fátima</Text>
 					<Text style={styles.cep}>61760-640</Text>
 				</View>
+				<TouchableOpacity
+					style={styles.logoutButton}
+					activeOpacity={0.8}
+					onPress={handleSignOut}
+					accessibilityRole="button"
+					accessibilityLabel="Sair da conta"
+				>
+					<Text style={styles.logoutText}>Sair</Text>
+				</TouchableOpacity>
 				<TouchableOpacity style={styles.bagButton}>
-					<Text style={styles.bagIcon}>♧</Text>
+					<MaterialCommunityIcons name="shopping-outline" size={24} color="white" />
 					<View style={styles.badge}><Text style={styles.badgeText}>1</Text></View>
 				</TouchableOpacity>
 			</View>
@@ -107,7 +127,13 @@ export default function Home() {
 					['⌂', 'Início', true], ['♡', 'Favoritos'], ['♧', 'Sacola'], ['▣', 'Catálogo'], ['♙', 'Perfil'],
 				].map(([icon, label, active]) => (
 					<TouchableOpacity style={styles.tab} key={label}>
-						<View style={active ? styles.activeTabIcon : styles.tabIcon}><Text style={active ? styles.activeIconText : styles.iconText}>{icon}</Text></View>
+						<View style={active ? styles.activeTabIcon : styles.tabIcon}>
+							{label === 'Início' ? (
+								<Octicons name={active ? 'home-fill' : 'home'} size={24} color={active ? 'white' : '#757575'} />
+							) : (
+								<Text style={active ? styles.activeIconText : styles.iconText}>{icon}</Text>
+							)}
+						</View>
 						<Text style={active ? styles.activeTabLabel : styles.tabLabel}>{label}</Text>
 					</TouchableOpacity>
 				))}
@@ -124,6 +150,8 @@ const styles = StyleSheet.create({
 	contentArea: {
 		flex: 1,
 		paddingTop: 12,
+		borderTopRightRadius: 24,
+		borderTopLeftRadius: 24,
 	},
 
 	header: {
@@ -169,14 +197,23 @@ const styles = StyleSheet.create({
 		width: 34,
 		height: 34,
 		borderRadius: 9,
-		backgroundColor: '#31ac7c',
+		backgroundColor: '#40B190',
 		alignItems: 'center',
 		justifyContent: 'center',
 	},
-	bagIcon: {
-		color: colors.white,
-		fontSize: 22,
-		lineHeight: 24,
+	logoutButton: {
+		height: 34,
+		paddingHorizontal: 10,
+		marginLeft: 8,
+		borderRadius: 9,
+		backgroundColor: '#ffffff',
+		alignItems: 'center',
+		justifyContent: 'center',
+	},
+	logoutText: {
+		color: colors.green,
+		fontSize: 11,
+		fontWeight: '800',
 	},
 	badge: {
 		position: 'absolute',
@@ -330,7 +367,7 @@ const styles = StyleSheet.create({
 		fontWeight: '500',
 	},
 	price: {
-		color: colors.brightGreen,
+		color: colors.green,
 		fontSize: 12,
 		fontWeight: '900',
 		marginTop: 1,

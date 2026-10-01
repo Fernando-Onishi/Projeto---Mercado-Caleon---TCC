@@ -1,14 +1,25 @@
 import React, {useEffect} from 'react';
 import {View, StyleSheet, Text, Image, ImageBackground, TouchableOpacity} from 'react-native';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth } from '../Config/FireBaseConfig';
 
 
 export default function TelaSplash({navigation}) {
   useEffect(() => {
-    const timer = setTimeout(() => {
-      navigation.replace('TelaHome');
-    }, 2500);
+    let timer;
+    let hasResolvedAuth = false;
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (hasResolvedAuth) return;
+      hasResolvedAuth = true;
+      timer = setTimeout(() => {
+        navigation.replace(user ? 'TelaHome' : 'TelaLogin');
+      }, 2500);
+    });
 
-    return () => clearTimeout(timer);
+    return () => {
+      unsubscribe();
+      clearTimeout(timer);
+    };
   }, [navigation]);
 
   return(

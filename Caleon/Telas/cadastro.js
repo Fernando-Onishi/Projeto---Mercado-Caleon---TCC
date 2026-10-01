@@ -1,5 +1,11 @@
 import React, { useState } from 'react';
+import { useFonts } from 'expo-font';
+import EvilIcons from '@expo/vector-icons/EvilIcons';
+import FontAwesome from '@expo/vector-icons/FontAwesome';
+import Fontisto from '@expo/vector-icons/Fontisto';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { useWindowDimensions } from 'react-native';
+import { auth } from '../Config/FireBaseConfig';
 import {
 	Alert,
 	Image,
@@ -14,12 +20,17 @@ import {
 	TouchableOpacity,
 	View,
 } from 'react-native';
-import { auth } from '../Config/FireBaseConfig';
 
-function FormField({ icon, placeholder, value, onChangeText, ...inputProps }) {
+function FormField({ fontAwesomeIcon, fontistoIcon, placeholder, value, onChangeText, ...inputProps }) {
 	return (
 		<View style={styles.inputContainer}>
-			<Text style={styles.inputIcon} accessibilityElementsHidden>{icon}</Text>
+			{fontAwesomeIcon ? (
+				<FontAwesome name={fontAwesomeIcon} size={18} color="" style={styles.iconGlyph} accessibilityElementsHidden />
+			) : fontistoIcon === 'locked' ? (
+					<EvilIcons name="lock" size={26} color="" style={styles.iconGlyph} accessibilityElementsHidden />
+			) : (
+				<Fontisto name={fontistoIcon} size={18} color="" style={styles.iconGlyph} accessibilityElementsHidden />
+			)}
 			<TextInput
 				style={styles.input}
 				placeholder={placeholder}
@@ -33,10 +44,24 @@ function FormField({ icon, placeholder, value, onChangeText, ...inputProps }) {
 }
 
 export default function TelaCadastro({ navigation }) {
+	const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+	const panelHorizontalPadding = screenWidth < 380 ? 20 : screenWidth >= 900 ? 32 : 24;
+	const contentMaxWidth = Math.min(screenWidth - panelHorizontalPadding * 2, 560);
+	const logoSize = Math.min(280, screenWidth * 0.68, screenHeight * 0.36);
+	const brandMinHeight = Math.max(180, Math.min(250, screenHeight * 0.3));
+	const [fontsLoaded] = useFonts({
+		LuckiestGuy: require('@expo-google-fonts/luckiest-guy/400Regular/LuckiestGuy_400Regular.ttf'),
+		MontserratRegular: require('@expo-google-fonts/montserrat/400Regular/Montserrat_400Regular.ttf'),
+		MontserratMedium: require('@expo-google-fonts/montserrat/500Medium/Montserrat_500Medium.ttf'),
+		MontserratSemiBold: require('@expo-google-fonts/montserrat/600SemiBold/Montserrat_600SemiBold.ttf'),
+		MontserratBold: require('@expo-google-fonts/montserrat/700Bold/Montserrat_700Bold.ttf'),
+	});
 	const [name, setName] = useState('');
 	const [email, setEmail] = useState('');
 	const [password, setPassword] = useState('');
 	const [isSubmitting, setIsSubmitting] = useState(false);
+
+	if (!fontsLoaded) return null;
 
 	async function handleRegister() {
 		if (!name.trim()) {
@@ -82,7 +107,12 @@ export default function TelaCadastro({ navigation }) {
 	}
 
 	return (
-		<ImageBackground source={require('../assets/fundo.png')} resizeMode="cover" style={styles.background}>
+		<ImageBackground
+			source={require('../assets/fundo.png')}
+			resizeMode="cover"
+			style={styles.background}
+			imageStyle={styles.backgroundImage}
+		>
 			<SafeAreaView style={styles.safeArea}>
 				<KeyboardAvoidingView
 					style={styles.keyboardArea}
@@ -93,7 +123,7 @@ export default function TelaCadastro({ navigation }) {
 						keyboardShouldPersistTaps="handled"
 						showsVerticalScrollIndicator={false}
 					>
-						<View style={styles.brandArea}>
+						<View style={[styles.brandArea, { minHeight: brandMinHeight }]}>
 							<TouchableOpacity
 								style={styles.helpButton}
 								activeOpacity={0.8}
@@ -101,17 +131,21 @@ export default function TelaCadastro({ navigation }) {
 								accessibilityRole="button"
 								accessibilityLabel="Ajuda sobre o cadastro"
 							>
-								<Text style={styles.helpText}>?</Text>
+								<Fontisto name="question" size={16} color="black" accessibilityElementsHidden />
 							</TouchableOpacity>
-							<Image source={require('../assets/logo.png')} style={styles.logo} resizeMode="contain" />
+							<Image
+								source={require('../assets/logo.png')}
+								style={[styles.logo, { width: logoSize, height: logoSize }]}
+								resizeMode="contain"
+							/>
 						</View>
 
-						<View style={styles.formPanel}>
+						<View style={[styles.formPanel, { paddingHorizontal: panelHorizontalPadding }]}>
 							<Text style={styles.title}>CADASTRE-SE</Text>
 
-							<View style={styles.fields}>
+							<View style={[styles.fields, { maxWidth: contentMaxWidth }]}>
 								<FormField
-									icon="♟"
+									fontAwesomeIcon="user-o"
 									placeholder="Nome"
 									value={name}
 									onChangeText={setName}
@@ -120,7 +154,7 @@ export default function TelaCadastro({ navigation }) {
 									accessibilityLabel="Nome"
 								/>
 								<FormField
-									icon="✉"
+									fontistoIcon="email"
 									placeholder="E-mail"
 									value={email}
 									onChangeText={setEmail}
@@ -130,7 +164,7 @@ export default function TelaCadastro({ navigation }) {
 									accessibilityLabel="E-mail"
 								/>
 								<FormField
-									icon="▣"
+									fontistoIcon="locked"
 									placeholder="Senha"
 									value={password}
 									onChangeText={setPassword}
@@ -141,7 +175,7 @@ export default function TelaCadastro({ navigation }) {
 							</View>
 
 							<TouchableOpacity
-								style={styles.submitButton}
+								style={[styles.submitButton, { maxWidth: contentMaxWidth }]}
 								activeOpacity={0.85}
 								onPress={handleRegister}
 								disabled={isSubmitting}
@@ -160,7 +194,7 @@ export default function TelaCadastro({ navigation }) {
 							</TouchableOpacity>
 
 							<View style={styles.termsContainer}>
-								<Text style={styles.termsText}>
+								<Text style={[styles.termsText, { maxWidth: contentMaxWidth }]}>
 									Ao continuar, você concorda com os Termos de Uso e está ciente da Declaração de Privacidade.
 								</Text>
 							</View>
@@ -175,6 +209,11 @@ export default function TelaCadastro({ navigation }) {
 const styles = StyleSheet.create({
 	background: {
 		flex: 1,
+		width: '100%',
+	},
+	backgroundImage: {
+		width: '100%',
+		height: '100%',
 	},
 	safeArea: {
 		flex: 1,
@@ -188,15 +227,13 @@ const styles = StyleSheet.create({
 	},
 	brandArea: {
 		flex: 1,
-		minHeight: 245,
+		minHeight: 180,
 		alignItems: 'center',
 		justifyContent: 'center',
 		paddingTop: 14,
 	},
 	logo: {
-		width: '72%',
-		maxWidth: 220,
-		aspectRatio: 1,
+		maxWidth: '72%',
 	},
 	helpButton: {
 		position: 'absolute',
@@ -210,84 +247,77 @@ const styles = StyleSheet.create({
 		justifyContent: 'center',
 		zIndex: 1,
 	},
-	helpText: {
-		color: '#205f4d',
-		fontSize: 19,
-		fontWeight: '900',
-		lineHeight: 22,
-	},
 	formPanel: {
 		flex: 1,
-		minHeight: 285,
-		paddingHorizontal: 16,
-		paddingTop: 16,
-		paddingBottom: 10,
+		minHeight: 380,
+		paddingTop: 24,
+		paddingBottom: 20,
 		alignItems: 'center',
 		backgroundColor: '#ffffff',
-		borderTopLeftRadius: 28,
-		borderTopRightRadius: 28,
+		borderTopLeftRadius: 24,
+		borderTopRightRadius: 24,
 	},
 	title: {
 		color: '#101412',
-		fontSize: 19,
-		fontWeight: '900',
-		marginBottom: 14,
+		fontFamily: 'LuckiestGuy',
+		fontSize: 26,
+		marginBottom: 22,
 	},
 	fields: {
 		width: '100%',
-		gap: 9,
+		maxWidth: 560,
+		gap: 12,
 	},
 	inputContainer: {
-		height: 38,
+		height: 48,
 		width: '100%',
 		flexDirection: 'row',
 		alignItems: 'center',
-		paddingHorizontal: 9,
-		borderRadius: 9,
+		paddingHorizontal: 13,
+		borderRadius: 11,
 		backgroundColor: '#f2f3f3',
 		elevation: 2,
 	},
-	inputIcon: {
-		width: 20,
-		color: '#737b78',
-		fontSize: 14,
+	iconGlyph: {
+		width: 24,
 		textAlign: 'center',
-		marginRight: 2,
+		marginRight: 6,
 	},
 	input: {
 		flex: 1,
-		paddingVertical: 0,
+		paddingVertical: 8,
 		color: '#202623',
-		fontSize: 12,
+		fontFamily: 'MontserratRegular',
+		fontSize: 14,
 	},
 	submitButton: {
-		width: '52%',
-		maxWidth: 180,
-		minWidth: 140,
-		height: 40,
-		marginTop: 14,
-		borderRadius: 4,
+		width: '100%',
+		maxWidth: 560,
+		height: 48,
+		marginTop: 24,
+		borderRadius: 9,
 		alignItems: 'center',
 		justifyContent: 'center',
-		backgroundColor: '#145441',
+		backgroundColor: '#1B4B3D',
 		elevation: 3,
 	},
 	submitText: {
 		color: '#ffffff',
+		fontFamily: 'MontserratBold',
 		fontSize: 14,
-		fontWeight: '800',
 	},
 	backButton: {
 		paddingHorizontal: 16,
-		paddingVertical: 7,
+		paddingVertical: 14,
 	},
 	backText: {
-		color: '#c8ccca',
+		color: '#1B4B3D',
+		fontFamily: 'MontserratMedium',
 		fontSize: 13,
-		fontWeight: '800',
 	},
 	termsContainer: {
 		width: '100%',
+		maxWidth: 560,
 		marginTop: 'auto',
 		paddingTop: 7,
 		borderTopWidth: StyleSheet.hairlineWidth,
@@ -295,8 +325,9 @@ const styles = StyleSheet.create({
 	},
 	termsText: {
 		color: '#414744',
-		fontSize: 8,
-		lineHeight: 10,
+		fontFamily: 'MontserratRegular',
+		fontSize: 13,
+		lineHeight: 15,
 		textAlign: 'center',
 	},
 });
