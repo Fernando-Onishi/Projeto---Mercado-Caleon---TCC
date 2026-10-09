@@ -3,9 +3,12 @@ import { useFonts } from 'expo-font';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import {
 	Alert,
+	FlatList,
+	Image,
 	SafeAreaView,
 	ScrollView,
 	StyleSheet,
+	StatusBar,
 	Text,
 	TextInput,
 	TouchableOpacity,
@@ -109,6 +112,109 @@ function ProductSection({ title, products: sectionProducts, cardWidth }) {
 	);
 }
 
+const catalogCategories = [
+	{ name: 'Hortí-Fruti', image: 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&w=700&q=85' },
+	{ name: 'Bebidas', image: 'https://images.unsplash.com/photo-1544145945-f90425340c7e?auto=format&w=700&q=85' },
+	{ name: 'Laticínios', image: 'https://images.unsplash.com/photo-1563636619-e9143da7973b?auto=format&w=700&q=85' },
+	{ name: 'Açougue', image: 'https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?auto=format&w=700&q=85' },
+	{ name: 'Limpeza', image: 'https://images.unsplash.com/photo-1563453392212-326f5e854473?auto=format&w=700&q=85' },
+	{ name: 'Matinais', image: 'https://images.unsplash.com/photo-1533089860892-a7c6f0a88666?auto=format&w=700&q=85' },
+];
+
+const catalogTabs = [
+	{ label: 'Início', icon: 'home-outline', screen: 'TelaHome' },
+	{ label: 'Favoritos', icon: 'heart-outline', screen: 'TelaFavorito' },
+	{ label: 'Sacola', icon: 'shopping-outline' },
+	{ label: 'Catálogo', icon: 'clipboard-list-outline', active: true },
+	{ label: 'Perfil', icon: 'account-outline' },
+];
+
+export function Produtos({ navigation }) {
+	const { width: windowWidth } = useWindowDimensions();
+	const cardWidth = (windowWidth - 50) / 2;
+
+	function unavailable(destination) {
+		Alert.alert(destination, 'Esta tela ainda não está disponível no aplicativo.');
+	}
+
+	return (
+		<SafeAreaView style={catalogStyles.safeArea}>
+			<StatusBar backgroundColor={colors.green} barStyle="light-content" />
+			<View style={catalogStyles.topBand} />
+			<View style={catalogStyles.screen}>
+				<View style={catalogStyles.header}>
+					<TouchableOpacity style={catalogStyles.backButton} onPress={() => {
+						if (navigation.canGoBack()) navigation.goBack();
+						else navigation.navigate('TelaHome');
+					}} accessibilityLabel="Voltar">
+						<MaterialCommunityIcons name="arrow-left" size={22} color="white" />
+					</TouchableOpacity>
+					<Text style={catalogStyles.title}>Produtos</Text>
+					<TouchableOpacity style={catalogStyles.bagButton} onPress={() => unavailable('Sacola')} accessibilityLabel="Abrir sacola, 1 item">
+						<MaterialCommunityIcons name="shopping-outline" size={23} color="white" />
+						<View style={catalogStyles.badge}><Text style={catalogStyles.badgeText}>1</Text></View>
+					</TouchableOpacity>
+				</View>
+				<FlatList
+					data={catalogCategories}
+					numColumns={2}
+					keyExtractor={(item) => item.name}
+					renderItem={({ item }) => (
+						<TouchableOpacity style={[catalogStyles.card, { width: cardWidth, height: cardWidth }]} onPress={() => unavailable(item.name)} accessibilityRole="button">
+							<Image source={{ uri: item.image }} style={catalogStyles.image} resizeMode="contain" />
+							<Text style={catalogStyles.categoryName}>{item.name}</Text>
+						</TouchableOpacity>
+					)}
+					columnWrapperStyle={catalogStyles.row}
+					contentContainerStyle={catalogStyles.grid}
+					showsVerticalScrollIndicator={false}
+					style={catalogStyles.list}
+				/>
+				<View style={catalogStyles.tabBar}>
+					{catalogTabs.map((tab) => {
+						const active = Boolean(tab.active);
+						return (
+							<TouchableOpacity key={tab.label} style={catalogStyles.tab} onPress={() => {
+								if (tab.screen) navigation.navigate(tab.screen);
+								else if (!active) unavailable(tab.label);
+							}} accessibilityRole="button" accessibilityState={{ selected: active }}>
+								<View style={[catalogStyles.tabIcon, active && catalogStyles.activeTabIcon]}>
+									<MaterialCommunityIcons name={tab.icon} size={23} color={active ? 'white' : colors.muted} />
+								</View>
+								<Text style={[catalogStyles.tabLabel, active && catalogStyles.activeTabLabel]}>{tab.label}</Text>
+							</TouchableOpacity>
+						);
+					})}
+				</View>
+			</View>
+		</SafeAreaView>
+	);
+}
+
+const catalogStyles = StyleSheet.create({
+	safeArea: { flex: 1, backgroundColor: colors.green },
+	topBand: { height: 40, backgroundColor: colors.green },
+	screen: { flex: 1, marginTop: -1, borderTopLeftRadius: 28, borderTopRightRadius: 28, backgroundColor: '#F1F3F4', overflow: 'hidden' },
+	header: { height: 72, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+	backButton: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: '#43B196' },
+	title: { position: 'absolute', left: 56, right: 56, textAlign: 'center', color: colors.ink, fontFamily: 'LilitaOne_400Regular', fontSize: 30 },
+	bagButton: { width: 38, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: '#43B196' },
+	badge: { position: 'absolute', right: -4, top: -5, minWidth: 17, height: 17, paddingHorizontal: 3, borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F04449' },
+	badgeText: { color: colors.white, fontFamily: 'Montserrat_700Bold', fontSize: 9 },
+	list: { flex: 1 },
+	grid: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 22, gap: 48 },
+	row: { justifyContent: 'space-between', gap: 18 },
+	card: { padding: 9, alignItems: 'center', justifyContent: 'space-between', borderRadius: 15, borderWidth: StyleSheet.hairlineWidth, borderColor: '#D1D6D4', backgroundColor: colors.white, shadowColor: '#525A57', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.14, shadowRadius: 5, elevation: 3 },
+	image: { width: '100%', flex: 1, borderRadius: 9 },
+	categoryName: { marginTop: 7, color: colors.ink, fontFamily: 'LilitaOne_400Regular', fontSize: 18, textAlign: 'center' },
+	tabBar: { minHeight: 68, paddingTop: 8, paddingBottom: 5, borderTopWidth: 1, borderTopColor: '#AEB5B2', backgroundColor: '#F1F3F4', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around' },
+	tab: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 2 },
+	tabIcon: { width: 33, height: 30, alignItems: 'center', justifyContent: 'center' },
+	activeTabIcon: { borderRadius: 9, backgroundColor: colors.green },
+	tabLabel: { color: colors.muted, fontFamily: 'Montserrat_700Bold', fontSize: 9 },
+	activeTabLabel: { color: colors.green },
+});
+
 export default function Home({ navigation }) {
 	const { width: windowWidth } = useWindowDimensions();
 	const productCardWidth = windowWidth * 0.335;
@@ -190,7 +296,14 @@ export default function Home({ navigation }) {
 							<View style={styles.banner} />
 						</View>
 						<ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesRow}>
-							{categories.map((category) => <TouchableOpacity key={category} style={styles.category}><Text style={styles.categoryText}>{category}</Text></TouchableOpacity>)}
+							<View style={styles.categoryFilter} accessibilityLabel="Filtros de categorias">
+								<Feather name="sliders" size={25} color={colors.white} />
+							</View>
+							{categories.map((category) => (
+								<TouchableOpacity key={category} style={styles.category}>
+									<Text style={styles.categoryText}>{category}</Text>
+								</TouchableOpacity>
+							))}
 						</ScrollView>
 					</>
 				)}
@@ -234,7 +347,14 @@ export default function Home({ navigation }) {
 				{[
 					['⌂', 'Início', true], ['♡', 'Favoritos'], ['♧', 'Sacola'], ['▣', 'Catálogo'], ['♙', 'Perfil'],
 				].map(([icon, label, active]) => (
-					<TouchableOpacity style={styles.tab} key={label}>
+					<TouchableOpacity
+						style={styles.tab}
+						key={label}
+						onPress={() => {
+							if (label === 'Catálogo') navigation.navigate('TelaProdutos');
+							if (label === 'Favoritos') navigation.navigate('TelaFavorito');
+						}}
+					>
 						<View style={active ? styles.activeTabIcon : styles.tabIcon}>
 							{label === 'Início' ? (
 								<Octicons name={active ? 'home-fill' : 'home'} size={24} color={active ? 'white' : '#757575'} />
@@ -374,21 +494,30 @@ const styles = StyleSheet.create({
 		width: 143,
 	},
 	categoriesRow: {
-		paddingHorizontal: 18,
-		gap: 5,
-		paddingVertical: 10,
+		paddingHorizontal: 15,
+		gap: 11,
+		paddingVertical: 12,
+		alignItems: 'center',
+	},
+	categoryFilter: {
+		width: 60,
+		height: 44,
+		backgroundColor: colors.green,
+		borderRadius: 24,
+		alignItems: 'center',
+		justifyContent: 'center',
 	},
 	category: {
 		backgroundColor: colors.green,
-		paddingHorizontal: 8,
-		height: 21,
+		paddingHorizontal: 15,
+		height: 44,
 		justifyContent: 'center',
-		borderRadius: 11,
+		borderRadius: 24,
 	},
 	categoryText: {
 		color: colors.white,
-		fontFamily: 'Montserrat_500Medium',
-		fontSize: 8,
+		fontFamily: 'Montserrat_700Bold',
+		fontSize: 17,
 	},
 
 	scrollContent: {
