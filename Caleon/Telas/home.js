@@ -19,7 +19,10 @@ import {
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import Feather from '@expo/vector-icons/Feather';
 import { auth } from '../Config/FireBaseConfig';
+import { formatCurrency, formatWeight, getProductPrice, PRODUCTS } from '../Config/Produtos';
+import { addProductToCart, getFavorites, toggleFavorite } from '../Config/ProdutoStorage';
 import NavegacaoInferior from '../Componentes/NavegacaoInferior';
+import useSacolaCount, { publishSacolaCount } from '../Componentes/useSacolaCount';
 
 const colors = {
 	green: '#1B4B3D',
@@ -29,11 +32,14 @@ const colors = {
 	white: '#ffffff',
 };
 
-const products = [
-	{ name: 'Maçã', price: 'R$ 3,99', weight: '500g', discount: '20% OFF', emoji: '🍎' },
-	{ name: 'Maçã', price: 'R$ 3,99', weight: '500g', discount: '18% OFF', emoji: '🍎' },
-	{ name: 'Luxemburgo', price: 'R$ 3,99', weight: '500g', discount: '20% OFF', emoji: '🍎' },
-];
+const products = PRODUCTS.map((product) => ({
+	...product,
+	price: formatCurrency(getProductPrice(product, product.defaultWeightGrams)),
+	weight: formatWeight(product.defaultWeightGrams),
+	discount: product.originalPricePerKg
+		? `${Math.round((1 - product.pricePerKg / product.originalPricePerKg) * 100)}% OFF`
+		: null,
+}));
 
 const categories = ['Hortifruti', 'Carnes', 'Bebidas', 'Laticínios', 'Limpeza'];
 
@@ -54,7 +60,7 @@ function formatCep(value) {
 	return digits.length > 5 ? `${digits.slice(0, 5)}-${digits.slice(5)}` : digits;
 }
 
-function ProductCard({ product, width }) {
+function ProductCard({ product, width, onOpen, onAddToBag, onToggleFavorite, isFavorite }) {
 	const scale = width / 145;
 
 	return (
@@ -64,32 +70,33 @@ function ProductCard({ product, width }) {
 			padding: 7 * scale,
 			borderRadius: 25 * scale,
 		}]}>
-			<View style={[styles.productImage, {
-				height: 61 * scale,
-				borderRadius: 7 * scale,
-			}]}>
-				<Text style={[styles.discount, {
-					left: 2 * scale,
-					top: 3 * scale,
-					fontSize: 6 * scale,
-					paddingHorizontal: 3 * scale,
-					borderRadius: 3 * scale,
-				}]}>{product.discount}</Text>
-				<Text style={[styles.heart, {
-					right: 3 * scale,
-					top: 2 * scale,
-					borderRadius: 8 * scale,
-					fontSize: 11 * scale,
-					width: 13 * scale,
-					height: 13 * scale,
-					lineHeight: 12 * scale,
-				}]}>♡</Text>
-				<Text style={[styles.productEmoji, { fontSize: 39 * scale }]}>{product.emoji}</Text>
-			</View>
-			<Text style={[styles.productName, { fontSize: 10 * scale, marginTop: 4 * scale }]}>
-				{product.name} <Text style={[styles.weight, { fontSize: 7 * scale }]}>{product.weight}</Text>
-			</Text>
-			<Text style={[styles.price, { fontSize: 12 * scale, marginTop: 1 * scale }]}>{product.price}</Text>
+			<TouchableOpacity style={styles.productMain} onPress={onOpen} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel={`Ver detalhes de ${product.name}`}>
+				<View style={[styles.productImage, {
+					height: 61 * scale,
+					borderRadius: 7 * scale,
+				}]}>
+					{product.discount ? <Text style={[styles.discount, {
+						left: 2 * scale,
+						top: 3 * scale,
+						fontSize: 6 * scale,
+						paddingHorizontal: 3 * scale,
+						borderRadius: 3 * scale,
+					}]}>{product.discount}</Text> : null}
+					<Image source={{ uri: product.imageUrl }} style={styles.productImageContent} resizeMode="contain" />
+					<TouchableOpacity
+						style={[styles.heartButton, isFavorite && styles.heartButtonActive]}
+						onPress={(event) => { event.stopPropagation(); onToggleFavorite(product.id); }}
+						accessibilityRole="button"
+						accessibilityLabel={`${isFavorite ? 'Remover' : 'Adicionar'} ${product.name} ${isFavorite ? 'dos' : 'aos'} favoritos`}
+					>
+						<MaterialCommunityIcons name={isFavorite ? 'heart' : 'heart-outline'} size={12 * scale} color={isFavorite ? '#FF0000' : colors.green} />
+					</TouchableOpacity>
+				</View>
+				<Text style={[styles.productName, { fontSize: 10 * scale, marginTop: 4 * scale }]} numberOfLines={1}>
+					{product.name} <Text style={[styles.weight, { fontSize: 7 * scale }]}>{product.weight}</Text>
+				</Text>
+				<Text style={[styles.price, { fontSize: 12 * scale, marginTop: 1 * scale }]}>{product.price}</Text>
+			</TouchableOpacity>
 			<TouchableOpacity
 				style={[styles.addButton, {
 					height: 15 * scale,
@@ -97,6 +104,7 @@ function ProductCard({ product, width }) {
 					marginTop: 4 * scale,
 				}]}
 				activeOpacity={0.8}
+				onPress={() => onAddToBag(product)}
 			>
 				<Text style={[styles.addButtonText, { fontSize: 6 * scale }]}>＋ Adicionar à sacola</Text>
 			</TouchableOpacity>
@@ -104,7 +112,7 @@ function ProductCard({ product, width }) {
 	);
 }
 
-function ProductSection({ title, products: sectionProducts, cardWidth }) {
+function ProductSection({ title, products: sectionProducts, cardWidth, navigation, favoriteIds, onToggleFavorite, onAddToBag }) {
 	return (
 		<View style={styles.section}>
 			<View style={styles.sectionHeader}>
@@ -114,8 +122,16 @@ function ProductSection({ title, products: sectionProducts, cardWidth }) {
 				</TouchableOpacity>
 			</View>
 			<ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.productsRow}>
-				{sectionProducts.map((product, index) => (
-					<ProductCard product={product} width={cardWidth} key={`${title}-${index}`} />
+				{sectionProducts.map((product) => (
+					<ProductCard
+						product={product}
+						width={cardWidth}
+						onOpen={() => navigation.navigate('TelaDetalheProduto', { productId: product.id })}
+						onAddToBag={onAddToBag}
+						onToggleFavorite={onToggleFavorite}
+						isFavorite={favoriteIds.includes(product.id)}
+						key={`${title}-${product.id}`}
+					/>
 				))}
 			</ScrollView>
 		</View>
@@ -153,7 +169,7 @@ export function Produtos({ navigation }) {
 					</TouchableOpacity>
 					<Text style={catalogStyles.title}>Produtos</Text>
 					<TouchableOpacity style={catalogStyles.bagButton} onPress={() => unavailable('Sacola')} accessibilityLabel="Abrir sacola, 1 item">
-						<MaterialCommunityIcons name="shopping-outline" size={23} color="white" />
+						<MaterialCommunityIcons name="shopping-outline" size={25} color="white" />
 						<View style={catalogStyles.badge}><Text style={catalogStyles.badgeText}>1</Text></View>
 					</TouchableOpacity>
 				</View>
@@ -203,6 +219,7 @@ const catalogStyles = StyleSheet.create({
 export default function Home({ navigation }) {
 	const { width: windowWidth } = useWindowDimensions();
 	const productCardWidth = windowWidth * 0.335;
+	const bagCount = useSacolaCount();
 	const [fontsLoaded] = useFonts({
 		Lalezar_400Regular: require('@expo-google-fonts/lalezar/400Regular/Lalezar_400Regular.ttf'),
 		LilitaOne_400Regular: require('@expo-google-fonts/lilita-one/400Regular/LilitaOne_400Regular.ttf'),
@@ -215,6 +232,7 @@ export default function Home({ navigation }) {
 	const [cepDraft, setCepDraft] = useState('61760-640');
 	const [isCepModalVisible, setIsCepModalVisible] = useState(false);
 	const [searchText, setSearchText] = useState('');
+	const [favoriteIds, setFavoriteIds] = useState([]);
 	const normalizedSearchText = normalizeSearchText(searchText);
 	const isSearching = normalizedSearchText.length > 0;
 	const matchingProducts = isSearching
@@ -229,6 +247,20 @@ export default function Home({ navigation }) {
 		setUserName(capitalizeFirstLetter(displayName));
 	}), []);
 
+	useEffect(() => {
+		let active = true;
+		async function loadFavorites() {
+			const ids = await getFavorites();
+			if (active) setFavoriteIds(ids);
+		}
+		loadFavorites();
+		const unsubscribe = navigation.addListener('focus', loadFavorites);
+		return () => {
+			active = false;
+			unsubscribe();
+		};
+	}, [navigation]);
+
 	if (!fontsLoaded) return null;
 
 	async function handleSignOut() {
@@ -237,6 +269,26 @@ export default function Home({ navigation }) {
 			navigation.replace('TelaLogin');
 		} catch {
 			Alert.alert('Sair', 'Não foi possível encerrar sua sessão. Tente novamente.');
+		}
+	}
+
+	async function handleAddToBag(product) {
+		try {
+			const nextItems = await addProductToCart(product, product.defaultWeightGrams);
+			publishSacolaCount(nextItems);
+			navigation.navigate('TelaSacola');
+		} catch (error) {
+			console.error('Erro ao adicionar item na sacola:', error);
+			Alert.alert('Sacola', 'Não foi possível adicionar o produto à sacola.');
+		}
+	}
+
+	async function handleToggleFavorite(productId) {
+		try {
+			const result = await toggleFavorite(productId);
+			setFavoriteIds(result.favoriteIds);
+		} catch {
+			Alert.alert('Favoritos', 'Não foi possível atualizar seus favoritos.');
 		}
 	}
 
@@ -260,7 +312,7 @@ export default function Home({ navigation }) {
 		<SafeAreaView style={styles.safeArea}>
 			<View style={styles.header}>
 				<View style={styles.locationIcon}>
-					<Feather name="map-pin" size={24} color="white" />
+					<Feather name="map-pin" size={40} color="white" />
 				</View>
 				<View style={styles.locationText}>
 					<Text style={styles.greeting} numberOfLines={1}>Olá, {userName}</Text>
@@ -288,9 +340,18 @@ export default function Home({ navigation }) {
 				>
 					<Text style={styles.logoutText}>Sair</Text>
 				</TouchableOpacity>
-				<TouchableOpacity style={styles.bagButton}>
-					<MaterialCommunityIcons name="shopping-outline" size={30} color="white" />
-					<View style={styles.badge}><Text style={styles.badgeText}>1</Text></View>
+				<TouchableOpacity
+					style={styles.bagButton}
+					onPress={() => navigation.navigate('TelaSacola')}
+					accessibilityRole="button"
+					accessibilityLabel={`Sacola, ${bagCount} ${bagCount === 1 ? 'produto' : 'produtos'}`}
+				>
+					<MaterialCommunityIcons name="shopping-outline" size={40} color="white" />
+					{bagCount > 0 && (
+						<View style={styles.badge}>
+							<Text style={styles.badgeText}>{bagCount > 99 ? '99+' : bagCount}</Text>
+						</View>
+					)}
 				</TouchableOpacity>
 			</View>
 
@@ -382,6 +443,10 @@ export default function Home({ navigation }) {
 									title="Produtos encontrados"
 									products={matchingProducts}
 									cardWidth={productCardWidth}
+									navigation={navigation}
+									favoriteIds={favoriteIds}
+									onToggleFavorite={handleToggleFavorite}
+									onAddToBag={handleAddToBag}
 								/>
 							)}
 							{matchingCategories.length === 0 && matchingProducts.length === 0 && (
@@ -390,9 +455,9 @@ export default function Home({ navigation }) {
 						</>
 					) : (
 						<>
-							<ProductSection title="Em Destaque" products={products} cardWidth={productCardWidth} />
-							<ProductSection title="Em Promoção" products={products} cardWidth={productCardWidth} />
-							<ProductSection title="Produtos" products={products} cardWidth={productCardWidth} />
+							<ProductSection title="Em Destaque" products={products} cardWidth={productCardWidth} navigation={navigation} favoriteIds={favoriteIds} onToggleFavorite={handleToggleFavorite} onAddToBag={handleAddToBag} />
+							<ProductSection title="Em Promoção" products={products} cardWidth={productCardWidth} navigation={navigation} favoriteIds={favoriteIds} onToggleFavorite={handleToggleFavorite} onAddToBag={handleAddToBag} />
+							<ProductSection title="Produtos" products={products} cardWidth={productCardWidth} navigation={navigation} favoriteIds={favoriteIds} onToggleFavorite={handleToggleFavorite} onAddToBag={handleAddToBag} />
 						</>
 					)}
 				</ScrollView>
@@ -417,15 +482,15 @@ const styles = StyleSheet.create({
 	},
 
 	header: {
-		height: 90,
+		height: 122,
 		backgroundColor: colors.green,
 		flexDirection: 'row',
 		alignItems: 'center',
 		paddingHorizontal: 16,
 	},
 	locationIcon: {
-		width: 40,
-		height: 40,
+		width: 60,
+		height: 60,
 		borderRadius: 12,
 		backgroundColor: '#40B190',
 		alignItems: 'center',
@@ -438,20 +503,20 @@ const styles = StyleSheet.create({
 	greeting: {
 		color: colors.white,
 		fontFamily: 'Lalezar_400Regular',
-		fontSize: 17,
-		lineHeight: 22,
+		fontSize: 21,
+		lineHeight: 26,
 	},
 	address: {
 		color: colors.white,
 		fontFamily: 'Lalezar_400Regular',
-		fontSize: 14,
-		lineHeight: 19,
+		fontSize: 18,
+		lineHeight: 23,
 	},
 	cep: {
 		color: '#9dc6b7',
 		fontFamily: 'Lalezar_400Regular',
-		fontSize: 13,
-		lineHeight: 18,
+		fontSize: 16,
+		lineHeight: 21,
 	},
 	cepRow: {
 		flexDirection: 'row',
@@ -467,17 +532,17 @@ const styles = StyleSheet.create({
 		justifyContent: 'center',
 	},
 	bagButton: {
-		width: 40,
-		height: 40,
+		width: 60,
+		height: 60,
 		borderRadius: 9,
 		backgroundColor: '#40B190',
 		alignItems: 'center',
 		justifyContent: 'center',
 	},
 	logoutButton: {
-		height: 34,
-		paddingHorizontal: 10,
-		marginLeft: 8,
+		height: 40,
+		paddingHorizontal: 12,
+		marginLeft: 10,
 		borderRadius: 9,
 		backgroundColor: '#ffffff',
 		alignItems: 'center',
@@ -550,19 +615,20 @@ const styles = StyleSheet.create({
 	},
 	badge: {
 		position: 'absolute',
-		right: -3,
-		top: -4,
+		right: -6,
+		top: -6,
 		backgroundColor: '#ff3f44',
-		borderRadius: 8,
-		minWidth: 13,
-		height: 13,
+		borderRadius: 12,
+		minWidth: 24,
+		height: 24,
+		paddingHorizontal: 6,
 		alignItems: 'center',
 		justifyContent: 'center',
 	},
 	badgeText: {
 		color: colors.white,
 		fontFamily: 'Montserrat_500Medium',
-		fontSize: 8,
+		fontSize: 11,
 	},
 
 	searchBox: {
@@ -679,6 +745,9 @@ const styles = StyleSheet.create({
 		backgroundColor: colors.white,
 		borderRadius: 25,
 	},
+	productMain: {
+		flex: 1,
+	},
 	productImage: {
 		height: 61,
 		backgroundColor: '#f7f7f7',
@@ -686,6 +755,24 @@ const styles = StyleSheet.create({
 		alignItems: 'center',
 		justifyContent: 'center',
 		overflow: 'hidden',
+	},
+	productImageContent: {
+		width: '68%',
+		height: '100%',
+	},
+	heartButton: {
+		position: 'absolute',
+		right: 3,
+		top: 3,
+		width: 20,
+		height: 20,
+		borderRadius: 10,
+		backgroundColor: '#d7ece4',
+		alignItems: 'center',
+		justifyContent: 'center',
+	},
+	heartButtonActive: {
+		backgroundColor: '#ffe9e9',
 	},
 	discount: {
 		position: 'absolute',
@@ -697,22 +784,6 @@ const styles = StyleSheet.create({
 		fontSize: 6,
 		paddingHorizontal: 3,
 		borderRadius: 3,
-	},
-	heart: {
-		position: 'absolute',
-		right: 3,
-		top: 2,
-		color: colors.green,
-		backgroundColor: '#d7ece4',
-		borderRadius: 8,
-		fontSize: 11,
-		width: 13,
-		height: 13,
-		lineHeight: 12,
-		textAlign: 'center',
-	},
-	productEmoji: {
-		fontSize: 39,
 	},
 	productName: {
 		color: colors.green,

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
 	Animated,
+	Image,
 	PanResponder,
 	SafeAreaView,
 	StatusBar,
@@ -14,24 +15,20 @@ import { useFonts } from 'expo-font';
 import Feather from '@expo/vector-icons/Feather';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import NavegacaoInferior from '../Componentes/NavegacaoInferior';
+import { formatCurrency, getProductPrice, PRODUCTS } from '../Config/Produtos';
+import { getFavorites, toggleFavorite } from '../Config/ProdutoStorage';
 
 const palette = {
 	green: '#1b4b3d',
 	mint: '#40b190',
 	price: '#00a878',
 	background: '#f1f2f3',
+	muted: '#757575',
 	white: '#ffffff',
 	red: '#ff2929',
 };
 
-const initialFavorites = [
-	{ id: 'apple-1', type: 'apple', name: 'Maçã' },
-	{ id: 'watermelon-1', type: 'watermelon', name: 'Melancia' },
-	{ id: 'apple-2', type: 'apple', name: 'Maçã' },
-	{ id: 'watermelon-2', type: 'watermelon', name: 'Melancia' },
-];
-
-function FavoriteRow({ item, isOpen, width, onOpen, onDelete }) {
+function FavoriteRow({ item, isOpen, width, onOpen, onDelete, onPress }) {
 	const translateX = useRef(new Animated.Value(isOpen ? -80 : 0)).current;
 	const openRef = useRef(isOpen);
 	const onOpenRef = useRef(onOpen);
@@ -75,62 +72,53 @@ function FavoriteRow({ item, isOpen, width, onOpen, onDelete }) {
 				style={[styles.favoriteCard, { width, transform: [{ translateX }] }]}
 				{...panResponder.panHandlers}
 			>
-				{item.type === 'watermelon' ? <WatermelonCard /> : <AppleCard />}
-			</Animated.View>
-		</View>
-	);
-}
-
-function AppleCard() {
-	return (
-		<View style={styles.appleCardContent}>
-			<Text style={styles.appleImage} accessibilityLabel="Maçãs">🍎🍎</Text>
-			<View style={styles.productDetails}>
-				<Text style={styles.productName}>Maçã</Text>
-				<Text style={styles.currentPrice}>R$ 7,99/kg</Text>
-			</View>
-			<Feather name="chevron-right" size={24} color="#111111" />
-		</View>
-	);
-}
-
-function WatermelonCard() {
-	return (
-		<View style={styles.watermelonContent}>
-			<View style={styles.watermelonBag}>
-				<MaterialCommunityIcons name="shopping-bag-outline" size={48} color={palette.white} />
-			</View>
-			<View style={styles.watermelonDetails}>
-				<View style={styles.discountBadge}><Text style={styles.discountText}>30% OFF</Text></View>
-				<Text style={styles.watermelonImage} accessibilityLabel="Melancia">🍉</Text>
-				<View style={styles.watermelonText}>
-					<Text style={styles.productName}>Melancia</Text>
-					<View style={styles.priceLine}>
-						<Text style={styles.currentPrice}>R$ 7,99/kg</Text>
-						<Text style={styles.oldPrice}>R$ 10,99/kg</Text>
+				<TouchableOpacity style={styles.favoriteContent} onPress={onPress} activeOpacity={0.85} accessibilityRole="button">
+					<Image source={{ uri: item.imageUrl }} style={styles.favoriteImage} resizeMode="contain" />
+					<View style={styles.productDetails}>
+						<Text style={styles.productName}>{item.name}</Text>
+						<Text style={styles.currentPrice}>{formatCurrency(item.pricePerKg)}/kg</Text>
 					</View>
-				</View>
-			</View>
+					<Feather name="chevron-right" size={24} color="#111111" />
+				</TouchableOpacity>
+			</Animated.View>
 		</View>
 	);
 }
 
 export default function Favoritos({ navigation }) {
 	const { width } = useWindowDimensions();
-	const [favorites, setFavorites] = useState(initialFavorites);
-	const [openId, setOpenId] = useState('apple-1');
+	const [favorites, setFavorites] = useState([]);
+	const [openId, setOpenId] = useState(null);
 	const [fontsLoaded] = useFonts({
 		LilitaOne_400Regular: require('@expo-google-fonts/lilita-one/400Regular/LilitaOne_400Regular.ttf'),
 		Montserrat_400Regular: require('@expo-google-fonts/montserrat/400Regular/Montserrat_400Regular.ttf'),
 		Montserrat_500Medium: require('@expo-google-fonts/montserrat/500Medium/Montserrat_500Medium.ttf'),
 		Montserrat_700Bold: require('@expo-google-fonts/montserrat/700Bold/Montserrat_700Bold.ttf'),
 	});
+	useEffect(() => {
+		let active = true;
+		async function loadFavorites() {
+			const ids = await getFavorites();
+			if (active) setFavorites(PRODUCTS.filter((product) => ids.includes(product.id)));
+		}
+		loadFavorites();
+		const unsubscribe = navigation.addListener('focus', loadFavorites);
+		return () => {
+			active = false;
+			unsubscribe();
+		};
+	}, [navigation]);
 
 	if (!fontsLoaded) return null;
 
-	function removeFavorite(id) {
-		setFavorites((items) => items.filter((item) => item.id !== id));
-		if (openId === id) setOpenId(null);
+	async function removeFavorite(id) {
+		try {
+			await toggleFavorite(id);
+			setFavorites((items) => items.filter((item) => item.id !== id));
+			if (openId === id) setOpenId(null);
+		} catch {
+			Alert.alert('Favoritos', 'Não foi possível remover este produto.');
+		}
 	}
 
 	return (
@@ -155,6 +143,7 @@ export default function Favoritos({ navigation }) {
 			</View>
 
 			<View style={styles.list}>
+				{favorites.length === 0 && <Text style={styles.emptyFavorites}>Você ainda não favoritou produtos.</Text>}
 				{favorites.map((item) => (
 					<FavoriteRow
 						key={item.id}
@@ -163,6 +152,7 @@ export default function Favoritos({ navigation }) {
 						isOpen={openId === item.id}
 						onOpen={setOpenId}
 						onDelete={removeFavorite}
+						onPress={() => navigation.navigate('TelaDetalheProduto', { productId: item.id })}
 					/>
 				))}
 			</View>
@@ -233,6 +223,13 @@ const styles = StyleSheet.create({
 		paddingTop: 0,
 		gap: 10,
 	},
+	emptyFavorites: {
+		marginTop: 28,
+		color: palette.muted,
+		fontFamily: 'Montserrat_400Regular',
+		fontSize: 14,
+		textAlign: 'center',
+	},
 	rowClip: {
 		height: 85,
 		borderRadius: 13,
@@ -263,7 +260,12 @@ const styles = StyleSheet.create({
 		shadowRadius: 2,
 		shadowOffset: { width: 0, height: 2 },
 	},
-	appleCardContent: {
+	favoriteImage: {
+		width: 60,
+		height: 60,
+		marginRight: 11,
+	},
+	favoriteContent: {
 		flex: 1,
 		flexDirection: 'row',
 		alignItems: 'center',
@@ -289,58 +291,5 @@ const styles = StyleSheet.create({
 		fontFamily: 'LilitaOne_400Regular',
 		fontSize: 14,
 		lineHeight: 18,
-	},
-	watermelonContent: {
-		flex: 1,
-		flexDirection: 'row',
-	},
-	watermelonBag: {
-		width: 80,
-		backgroundColor: palette.mint,
-		alignItems: 'center',
-		justifyContent: 'center',
-	},
-	watermelonDetails: {
-		flex: 1,
-		flexDirection: 'row',
-		alignItems: 'center',
-		paddingLeft: 8,
-	},
-	discountBadge: {
-		position: 'absolute',
-		zIndex: 1,
-		left: 5,
-		top: 5,
-		paddingHorizontal: 5,
-		paddingVertical: 2,
-		borderRadius: 7,
-		backgroundColor: palette.red,
-	},
-	discountText: {
-		color: palette.white,
-		fontFamily: 'Montserrat_700Bold',
-		fontSize: 7,
-	},
-	watermelonImage: {
-		width: 88,
-		fontSize: 43,
-		textAlign: 'center',
-	},
-	watermelonText: {
-		flex: 1,
-		minWidth: 0,
-		justifyContent: 'center',
-	},
-	priceLine: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		flexWrap: 'nowrap',
-	},
-	oldPrice: {
-		marginLeft: 2,
-		color: '#6b7772',
-		fontFamily: 'Montserrat_700Bold',
-		fontSize: 7,
-		textDecorationLine: 'line-through',
 	},
 });

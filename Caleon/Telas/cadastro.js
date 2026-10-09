@@ -94,7 +94,7 @@ export default function TelaCadastro({ navigation }) {
 			} catch {
 				profileUpdateFailed = true;
 			}
-			navigation.replace('TelaHome');
+			navigation.replace('TelaSplash');
 			if (profileUpdateFailed) {
 				Alert.alert('Cadastro concluído', 'Sua conta foi criada, mas não foi possível salvar o nome no perfil.');
 			}

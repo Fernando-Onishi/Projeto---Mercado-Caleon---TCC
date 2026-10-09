@@ -55,7 +55,7 @@ export default function TelaLogin({ navigation }) {
 		setIsSubmitting(true);
 		try {
 			await signInWithEmailAndPassword(auth, email.trim(), password);
-			navigation.replace('TelaHome');
+			navigation.replace('TelaSplash');
 		} catch (error) {
 			const messages = {
 				'auth/invalid-credential': 'E-mail ou senha incorretos.',
