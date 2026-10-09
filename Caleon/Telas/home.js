@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useFonts } from 'expo-font';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import {
 	Alert,
@@ -8,10 +9,12 @@ import {
 	Text,
 	TextInput,
 	TouchableOpacity,
+	useWindowDimensions,
 	View,
 } from 'react-native';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import Octicons from '@expo/vector-icons/Octicons';
+import Feather from '@expo/vector-icons/Feather';
 import { auth } from '../Config/FireBaseConfig';
 
 const colors = {
@@ -25,29 +28,70 @@ const colors = {
 const products = [
 	{ name: 'Maçã', price: 'R$ 3,99', weight: '500g', discount: '20% OFF', emoji: '🍎' },
 	{ name: 'Maçã', price: 'R$ 3,99', weight: '500g', discount: '18% OFF', emoji: '🍎' },
-	{ name: 'Maçã', price: 'R$ 3,99', weight: '500g', discount: '20% OFF', emoji: '🍎' },
+	{ name: 'Luxemburgo', price: 'R$ 3,99', weight: '500g', discount: '20% OFF', emoji: '🍎' },
 ];
 
 const categories = ['Hortifruti', 'Carnes', 'Bebidas', 'Laticínios', 'Limpeza'];
 
-function ProductCard({ product }) {
+function normalizeSearchText(value) {
+	return value
+		.normalize('NFD')
+		.replace(/[\u0300-\u036f]/g, '')
+		.toLocaleLowerCase()
+		.trim();
+}
+
+function ProductCard({ product, width }) {
+	const scale = width / 145;
+
 	return (
-		<View style={styles.productCard}>
-			<View style={styles.productImage}>
-				<Text style={styles.discount}>{product.discount}</Text>
-				<Text style={styles.heart}>♡</Text>
-				<Text style={styles.productEmoji}>{product.emoji}</Text>
+		<View style={[styles.productCard, {
+			width,
+			minHeight: 180 * scale,
+			padding: 7 * scale,
+			borderRadius: 25 * scale,
+		}]}>
+			<View style={[styles.productImage, {
+				height: 61 * scale,
+				borderRadius: 7 * scale,
+			}]}>
+				<Text style={[styles.discount, {
+					left: 2 * scale,
+					top: 3 * scale,
+					fontSize: 6 * scale,
+					paddingHorizontal: 3 * scale,
+					borderRadius: 3 * scale,
+				}]}>{product.discount}</Text>
+				<Text style={[styles.heart, {
+					right: 3 * scale,
+					top: 2 * scale,
+					borderRadius: 8 * scale,
+					fontSize: 11 * scale,
+					width: 13 * scale,
+					height: 13 * scale,
+					lineHeight: 12 * scale,
+				}]}>♡</Text>
+				<Text style={[styles.productEmoji, { fontSize: 39 * scale }]}>{product.emoji}</Text>
 			</View>
-			<Text style={styles.productName}>{product.name} <Text style={styles.weight}>{product.weight}</Text></Text>
-			<Text style={styles.price}>{product.price}</Text>
-			<TouchableOpacity style={styles.addButton} activeOpacity={0.8}>
-				<Text style={styles.addButtonText}>＋ Adicionar à sacola</Text>
+			<Text style={[styles.productName, { fontSize: 10 * scale, marginTop: 4 * scale }]}>
+				{product.name} <Text style={[styles.weight, { fontSize: 7 * scale }]}>{product.weight}</Text>
+			</Text>
+			<Text style={[styles.price, { fontSize: 12 * scale, marginTop: 1 * scale }]}>{product.price}</Text>
+			<TouchableOpacity
+				style={[styles.addButton, {
+					height: 15 * scale,
+					borderRadius: 8 * scale,
+					marginTop: 4 * scale,
+				}]}
+				activeOpacity={0.8}
+			>
+				<Text style={[styles.addButtonText, { fontSize: 6 * scale }]}>＋ Adicionar à sacola</Text>
 			</TouchableOpacity>
 		</View>
 	);
 }
 
-function ProductSection({ title }) {
+function ProductSection({ title, products: sectionProducts, cardWidth }) {
 	return (
 		<View style={styles.section}>
 			<View style={styles.sectionHeader}>
@@ -57,18 +101,39 @@ function ProductSection({ title }) {
 				</TouchableOpacity>
 			</View>
 			<ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.productsRow}>
-				{products.map((product, index) => <ProductCard product={product} key={`${title}-${index}`} />)}
+				{sectionProducts.map((product, index) => (
+					<ProductCard product={product} width={cardWidth} key={`${title}-${index}`} />
+				))}
 			</ScrollView>
 		</View>
 	);
 }
 
 export default function Home({ navigation }) {
+	const { width: windowWidth } = useWindowDimensions();
+	const productCardWidth = windowWidth * 0.335;
+	const [fontsLoaded] = useFonts({
+		LilitaOne_400Regular: require('@expo-google-fonts/lilita-one/400Regular/LilitaOne_400Regular.ttf'),
+		Montserrat_400Regular: require('@expo-google-fonts/montserrat/400Regular/Montserrat_400Regular.ttf'),
+		Montserrat_500Medium: require('@expo-google-fonts/montserrat/500Medium/Montserrat_500Medium.ttf'),
+		Montserrat_700Bold: require('@expo-google-fonts/montserrat/700Bold/Montserrat_700Bold.ttf'),
+	});
 	const [userName, setUserName] = useState('usuário');
+	const [searchText, setSearchText] = useState('');
+	const normalizedSearchText = normalizeSearchText(searchText);
+	const isSearching = normalizedSearchText.length > 0;
+	const matchingProducts = isSearching
+		? products.filter((product) => normalizeSearchText(product.name).includes(normalizedSearchText))
+		: products;
+	const matchingCategories = isSearching
+		? categories.filter((category) => normalizeSearchText(category).includes(normalizedSearchText))
+		: [];
 
 	useEffect(() => onAuthStateChanged(auth, (user) => {
 		setUserName(user?.displayName?.trim() || 'usuário');
 	}), []);
+
+	if (!fontsLoaded) return null;
 
 	async function handleSignOut() {
 		try {
@@ -82,7 +147,9 @@ export default function Home({ navigation }) {
 	return (
 		<SafeAreaView style={styles.safeArea}>
 			<View style={styles.header}>
-				<View style={styles.locationIcon}><Text style={styles.pin}>⌖</Text></View>
+				<View style={styles.locationIcon}>
+					<Feather name="map-pin" size={24} color="white" />
+				</View>
 				<View style={styles.locationText}>
 					<Text style={styles.greeting} numberOfLines={1}>Olá, {userName}</Text>
 					<Text style={styles.address} numberOfLines={1}>R. Joaquim Nabuco, 131 - Fátima</Text>
@@ -98,27 +165,68 @@ export default function Home({ navigation }) {
 					<Text style={styles.logoutText}>Sair</Text>
 				</TouchableOpacity>
 				<TouchableOpacity style={styles.bagButton}>
-					<MaterialCommunityIcons name="shopping-outline" size={24} color="white" />
+					<MaterialCommunityIcons name="shopping-outline" size={30} color="white" />
 					<View style={styles.badge}><Text style={styles.badgeText}>1</Text></View>
 				</TouchableOpacity>
 			</View>
 
 			<View style={styles.contentArea}>
 				<View style={styles.searchBox}>
-					<Text style={styles.searchIcon}>⌕</Text>
-					<TextInput placeholder="Pesquise produtos, categorias" placeholderTextColor="#8b9491" style={styles.searchInput} />
+					<Feather name="search" size={24} color="black" style={styles.searchIcon} />
+					<TextInput
+						placeholder="Pesquise produtos, categorias"
+						placeholderTextColor="#8b9491"
+						style={styles.searchInput}
+						value={searchText}
+						onChangeText={setSearchText}
+						returnKeyType="search"
+						accessibilityLabel="Pesquisar produtos e categorias"
+					/>
 				</View>
-				<View style={styles.bannerRow}>
-					<View style={[styles.banner, styles.bannerWide]} />
-					<View style={styles.banner} />
-				</View>
-				<ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesRow}>
-					{categories.map((category) => <TouchableOpacity key={category} style={styles.category}><Text style={styles.categoryText}>{category}</Text></TouchableOpacity>)}
-				</ScrollView>
+				{!isSearching && (
+					<>
+						<View style={styles.bannerRow}>
+							<View style={[styles.banner, styles.bannerWide]} />
+							<View style={styles.banner} />
+						</View>
+						<ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesRow}>
+							{categories.map((category) => <TouchableOpacity key={category} style={styles.category}><Text style={styles.categoryText}>{category}</Text></TouchableOpacity>)}
+						</ScrollView>
+					</>
+				)}
 				<ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-					<ProductSection title="Em Destaque" />
-					<ProductSection title="Em Promoção" />
-					<ProductSection title="Produtos" />
+					{isSearching ? (
+						<>
+							{matchingCategories.length > 0 && (
+								<View style={styles.searchResults}>
+									<Text style={styles.sectionTitle}>Categorias</Text>
+									<View style={styles.searchCategories}>
+										{matchingCategories.map((category) => (
+											<View key={category} style={styles.category}>
+												<Text style={styles.categoryText}>{category}</Text>
+											</View>
+										))}
+									</View>
+								</View>
+							)}
+							{matchingProducts.length > 0 && (
+								<ProductSection
+									title="Produtos encontrados"
+									products={matchingProducts}
+									cardWidth={productCardWidth}
+								/>
+							)}
+							{matchingCategories.length === 0 && matchingProducts.length === 0 && (
+								<Text style={styles.noSearchResults}>Nenhum produto ou categoria encontrado.</Text>
+							)}
+						</>
+					) : (
+						<>
+							<ProductSection title="Em Destaque" products={products} cardWidth={productCardWidth} />
+							<ProductSection title="Em Promoção" products={products} cardWidth={productCardWidth} />
+							<ProductSection title="Produtos" products={products} cardWidth={productCardWidth} />
+						</>
+					)}
 				</ScrollView>
 			</View>
 
@@ -150,8 +258,9 @@ const styles = StyleSheet.create({
 	contentArea: {
 		flex: 1,
 		paddingTop: 12,
-		borderTopRightRadius: 24,
-		borderTopLeftRadius: 24,
+		backgroundColor: colors.surface,
+		borderTopRightRadius: 30,
+		borderTopLeftRadius: 30,
 	},
 
 	header: {
@@ -162,17 +271,12 @@ const styles = StyleSheet.create({
 		paddingHorizontal: 16,
 	},
 	locationIcon: {
-		width: 33,
-		height: 33,
-		borderRadius: 17,
-		borderWidth: 1,
-		borderColor: '#8ad4b8',
+		width: 40,
+		height: 40,
+		borderRadius: 12,
+		backgroundColor: '#40B190',
 		alignItems: 'center',
 		justifyContent: 'center',
-	},
-	pin: {
-		color: colors.white,
-		fontSize: 21,
 	},
 	locationText: {
 		flex: 1,
@@ -180,22 +284,24 @@ const styles = StyleSheet.create({
 	},
 	greeting: {
 		color: colors.white,
-		fontWeight: '800',
+		fontFamily: 'Montserrat_500Medium',
 		fontSize: 12,
 	},
 	address: {
 		color: colors.white,
+		fontFamily: 'Montserrat_400Regular',
 		fontSize: 9,
 		marginTop: 3,
 	},
 	cep: {
 		color: '#9dc6b7',
+		fontFamily: 'Montserrat_400Regular',
 		fontSize: 8,
 		marginTop: 2,
 	},
 	bagButton: {
-		width: 34,
-		height: 34,
+		width: 40,
+		height: 40,
 		borderRadius: 9,
 		backgroundColor: '#40B190',
 		alignItems: 'center',
@@ -212,8 +318,8 @@ const styles = StyleSheet.create({
 	},
 	logoutText: {
 		color: colors.green,
+		fontFamily: 'Montserrat_500Medium',
 		fontSize: 11,
-		fontWeight: '800',
 	},
 	badge: {
 		position: 'absolute',
@@ -228,8 +334,8 @@ const styles = StyleSheet.create({
 	},
 	badgeText: {
 		color: colors.white,
+		fontFamily: 'Montserrat_500Medium',
 		fontSize: 8,
-		fontWeight: '800',
 	},
 
 	searchBox: {
@@ -242,12 +348,11 @@ const styles = StyleSheet.create({
 		paddingHorizontal: 11,
 	},
 	searchIcon: {
-		color: '#61706d',
-		fontSize: 21,
 		marginRight: 7,
 	},
 	searchInput: {
 		flex: 1,
+		fontFamily: 'Montserrat_400Regular',
 		fontSize: 10,
 		color: colors.ink,
 		paddingVertical: 0,
@@ -282,12 +387,29 @@ const styles = StyleSheet.create({
 	},
 	categoryText: {
 		color: colors.white,
+		fontFamily: 'Montserrat_500Medium',
 		fontSize: 8,
-		fontWeight: '700',
 	},
 
 	scrollContent: {
 		paddingBottom: 10,
+	},
+	searchResults: {
+		paddingHorizontal: 18,
+		marginBottom: 14,
+	},
+	searchCategories: {
+		flexDirection: 'row',
+		flexWrap: 'wrap',
+		gap: 6,
+		marginTop: 8,
+	},
+	noSearchResults: {
+		color: colors.muted,
+		fontFamily: 'Montserrat_400Regular',
+		fontSize: 13,
+		marginHorizontal: 18,
+		marginTop: 14,
 	},
 	section: {
 		marginTop: 2,
@@ -301,11 +423,12 @@ const styles = StyleSheet.create({
 	},
 	sectionTitle: {
 		color: colors.ink,
+		fontFamily: 'LilitaOne_400Regular',
 		fontSize: 14,
-		fontWeight: '900',
 	},
 	seeAll: {
 		color: '#656f6c',
+		fontFamily: 'Montserrat_400Regular',
 		fontSize: 9,
 	},
 	productsRow: {
@@ -315,10 +438,10 @@ const styles = StyleSheet.create({
 	},
 	productCard: {
 		width: 145,
-		minHeight: 143,
+		minHeight: 180,
 		padding: 7,
 		backgroundColor: colors.white,
-		borderRadius: 9,
+		borderRadius: 25,
 	},
 	productImage: {
 		height: 61,
@@ -334,8 +457,8 @@ const styles = StyleSheet.create({
 		top: 3,
 		backgroundColor: '#ff3036',
 		color: colors.white,
+		fontFamily: 'Montserrat_500Medium',
 		fontSize: 6,
-		fontWeight: '800',
 		paddingHorizontal: 3,
 		borderRadius: 3,
 	},
@@ -357,19 +480,19 @@ const styles = StyleSheet.create({
 	},
 	productName: {
 		color: colors.green,
+		fontFamily: 'Montserrat_700Bold',
 		fontSize: 10,
-		fontWeight: '800',
 		marginTop: 4,
 	},
 	weight: {
 		color: '#7e8985',
+		fontFamily: 'Montserrat_400Regular',
 		fontSize: 7,
-		fontWeight: '500',
 	},
 	price: {
 		color: colors.green,
+		fontFamily: 'LilitaOne_400Regular',
 		fontSize: 12,
-		fontWeight: '900',
 		marginTop: 1,
 	},
 	addButton: {
@@ -382,8 +505,8 @@ const styles = StyleSheet.create({
 	},
 	addButtonText: {
 		color: colors.white,
+		fontFamily: 'Montserrat_500Medium',
 		fontSize: 6,
-		fontWeight: '700',
 	},
 
 	tabBar: {
@@ -422,13 +545,14 @@ const styles = StyleSheet.create({
 	},
 	tabLabel: {
 		color: '#7a8381',
+		fontFamily: 'Montserrat_400Regular',
 		fontSize: 8,
 		marginTop: 2,
 	},
 	activeTabLabel: {
 		color: colors.green,
+		fontFamily: 'Montserrat_500Medium',
 		fontSize: 8,
-		fontWeight: '800',
 		marginTop: 2,
 	},
 });
