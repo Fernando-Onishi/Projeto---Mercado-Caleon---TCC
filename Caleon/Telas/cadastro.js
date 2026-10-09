@@ -21,24 +21,28 @@ import {
 	View,
 } from 'react-native';
 
-function FormField({ fontAwesomeIcon, fontistoIcon, placeholder, value, onChangeText, ...inputProps }) {
+function FormField({ fontAwesomeIcon, fontistoIcon, placeholder, value, onChangeText, errorMessage, ...inputProps }) {
 	return (
-		<View style={styles.inputContainer}>
-			{fontAwesomeIcon ? (
-				<FontAwesome name={fontAwesomeIcon} size={18} color="" style={styles.iconGlyph} accessibilityElementsHidden />
-			) : fontistoIcon === 'locked' ? (
-					<EvilIcons name="lock" size={26} color="" style={styles.iconGlyph} accessibilityElementsHidden />
-			) : (
-				<Fontisto name={fontistoIcon} size={18} color="" style={styles.iconGlyph} accessibilityElementsHidden />
-			)}
-			<TextInput
-				style={styles.input}
-				placeholder={placeholder}
-				placeholderTextColor="#858b89"
-				value={value}
-				onChangeText={onChangeText}
-				{...inputProps}
-			/>
+		<View style={styles.fieldWrapper}>
+			<View style={[styles.inputContainer, errorMessage && styles.inputError]}>
+				{fontAwesomeIcon ? (
+					<FontAwesome name={fontAwesomeIcon} size={18} color={errorMessage ? '#c62828' : '#1B4B3D'} style={styles.iconGlyph} accessibilityElementsHidden />
+				) : fontistoIcon === 'locked' ? (
+					<EvilIcons name="lock" size={26} color={errorMessage ? '#c62828' : '#1B4B3D'} style={styles.iconGlyph} accessibilityElementsHidden />
+				) : (
+					<Fontisto name={fontistoIcon} size={18} color={errorMessage ? '#c62828' : '#1B4B3D'} style={styles.iconGlyph} accessibilityElementsHidden />
+				)}
+				<TextInput
+					style={styles.input}
+					placeholder={placeholder}
+					placeholderTextColor="#858b89"
+					value={value}
+					onChangeText={onChangeText}
+					accessibilityState={{ invalid: Boolean(errorMessage) }}
+					{...inputProps}
+				/>
+			</View>
+			{errorMessage ? <Text style={styles.fieldError}>{errorMessage}</Text> : null}
 		</View>
 	);
 }
@@ -60,25 +64,27 @@ export default function TelaCadastro({ navigation }) {
 	const [email, setEmail] = useState('');
 	const [password, setPassword] = useState('');
 	const [isSubmitting, setIsSubmitting] = useState(false);
+	const [feedback, setFeedback] = useState(null);
 
 	if (!fontsLoaded) return null;
 
 	async function handleRegister() {
 		if (!name.trim()) {
-			Alert.alert('Cadastro', 'Informe seu nome para continuar.');
+			setFeedback({ field: 'name', message: 'Informe seu nome para continuar.' });
 			return;
 		}
 
 		if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-			Alert.alert('Cadastro', 'Informe um e-mail válido.');
+			setFeedback({ field: 'email', message: 'Informe um e-mail válido.' });
 			return;
 		}
 
 		if (password.length < 6) {
-			Alert.alert('Cadastro', 'A senha deve ter pelo menos 6 caracteres.');
+			setFeedback({ field: 'password', message: 'A senha deve ter pelo menos 6 caracteres.' });
 			return;
 		}
 
+		setFeedback(null);
 		setIsSubmitting(true);
 		try {
 			const credential = await createUserWithEmailAndPassword(auth, email.trim(), password);
@@ -94,13 +100,15 @@ export default function TelaCadastro({ navigation }) {
 			}
 		} catch (error) {
 			const messages = {
-				'auth/email-already-in-use': 'Já existe uma conta com este e-mail.',
-				'auth/invalid-email': 'Informe um e-mail válido.',
-				'auth/weak-password': 'A senha deve ter pelo menos 6 caracteres.',
-				'auth/operation-not-allowed': 'O cadastro por e-mail ainda não está habilitado.',
-				'auth/network-request-failed': 'Sem conexão com a internet. Tente novamente.',
+				'auth/email-already-in-use': { field: 'email', message: 'Este e-mail já está cadastrado.' },
+				'auth/invalid-email': { field: 'email', message: 'O formato do e-mail é inválido.' },
+				'auth/weak-password': { field: 'password', message: 'A senha é muito fraca. Use pelo menos 6 caracteres.' },
+				'auth/operation-not-allowed': { message: 'O cadastro por e-mail não está habilitado no momento.' },
+				'auth/network-request-failed': { message: 'Falha de conexão. Verifique sua internet e tente novamente.' },
 			};
-			Alert.alert('Cadastro', messages[error.code] || 'Não foi possível criar sua conta. Tente novamente.');
+			setFeedback(messages[error.code] || {
+				message: 'Não foi possível criar a conta. Verifique os dados e tente novamente.',
+			});
 		} finally {
 			setIsSubmitting(false);
 		}
@@ -148,7 +156,11 @@ export default function TelaCadastro({ navigation }) {
 									fontAwesomeIcon="user-o"
 									placeholder="Nome"
 									value={name}
-									onChangeText={setName}
+									onChangeText={(value) => {
+										setName(value);
+										setFeedback(null);
+									}}
+									errorMessage={feedback?.field === 'name' ? feedback.message : null}
 									autoCapitalize="words"
 									autoComplete="name"
 									accessibilityLabel="Nome"
@@ -157,7 +169,11 @@ export default function TelaCadastro({ navigation }) {
 									fontistoIcon="email"
 									placeholder="E-mail"
 									value={email}
-									onChangeText={setEmail}
+									onChangeText={(value) => {
+										setEmail(value);
+										setFeedback(null);
+									}}
+									errorMessage={feedback?.field === 'email' ? feedback.message : null}
 									keyboardType="email-address"
 									autoCapitalize="none"
 									autoComplete="email"
@@ -167,12 +183,21 @@ export default function TelaCadastro({ navigation }) {
 									fontistoIcon="locked"
 									placeholder="Senha"
 									value={password}
-									onChangeText={setPassword}
+									onChangeText={(value) => {
+										setPassword(value);
+										setFeedback(null);
+									}}
+									errorMessage={feedback?.field === 'password' ? feedback.message : null}
 									secureTextEntry
 									autoComplete="new-password"
 									accessibilityLabel="Senha"
 								/>
 							</View>
+							{feedback && !feedback.field ? (
+								<Text style={styles.formError} accessibilityRole="alert">
+									{feedback.message}
+								</Text>
+							) : null}
 
 							<TouchableOpacity
 								style={[styles.submitButton, { maxWidth: contentMaxWidth }]}
@@ -268,6 +293,9 @@ const styles = StyleSheet.create({
 		maxWidth: 560,
 		gap: 12,
 	},
+	fieldWrapper: {
+		gap: 4,
+	},
 	inputContainer: {
 		height: 48,
 		width: '100%',
@@ -277,6 +305,25 @@ const styles = StyleSheet.create({
 		borderRadius: 11,
 		backgroundColor: '#f2f3f3',
 		elevation: 2,
+	},
+	inputError: {
+		borderWidth: 1,
+		borderColor: '#c62828',
+	},
+	fieldError: {
+		marginLeft: 4,
+		color: '#b3261e',
+		fontFamily: 'MontserratMedium',
+		fontSize: 11,
+	},
+	formError: {
+		width: '100%',
+		maxWidth: 560,
+		marginTop: 12,
+		color: '#b3261e',
+		fontFamily: 'MontserratMedium',
+		fontSize: 12,
+		textAlign: 'center',
 	},
 	iconGlyph: {
 		width: 24,

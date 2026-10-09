@@ -13,7 +13,7 @@ import {
 import { useFonts } from 'expo-font';
 import Feather from '@expo/vector-icons/Feather';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import Octicons from '@expo/vector-icons/Octicons';
+import NavegacaoInferior from '../Componentes/NavegacaoInferior';
 
 const palette = {
 	green: '#1b4b3d',
@@ -22,7 +22,6 @@ const palette = {
 	background: '#f1f2f3',
 	white: '#ffffff',
 	red: '#ff2929',
-	gray: '#777777',
 };
 
 const initialFavorites = [
@@ -116,44 +115,6 @@ function WatermelonCard() {
 	);
 }
 
-function BottomNavigation({ navigation }) {
-	const tabs = [
-		{ label: 'Início', icon: 'home', route: 'TelaHome' },
-		{ label: 'Favoritos', icon: 'heart', active: true },
-		{ label: 'Sacola', icon: 'shopping-outline', badge: true },
-		{ label: 'Catálogo', icon: 'clipboard-text-outline' },
-		{ label: 'Perfil', icon: 'account-outline' },
-	];
-
-	return (
-		<View style={styles.tabBar}>
-			{tabs.map((tab) => (
-				<TouchableOpacity
-					key={tab.label}
-					style={styles.tab}
-					onPress={() => tab.route && navigation.navigate(tab.route)}
-					accessibilityRole="button"
-					accessibilityLabel={tab.label}
-				>
-					<View style={tab.active ? styles.activeTabIcon : styles.tabIcon}>
-						{tab.label === 'Início' ? (
-							<Octicons name="home" size={23} color={palette.gray} />
-						) : (
-							<MaterialCommunityIcons
-								name={tab.icon}
-								size={tab.active ? 24 : 25}
-								color={tab.active ? palette.white : palette.gray}
-							/>
-						)}
-						{tab.badge && <View style={styles.tabBadge}><Text style={styles.badgeText}>1</Text></View>}
-					</View>
-					<Text style={tab.active ? styles.activeTabLabel : styles.tabLabel}>{tab.label}</Text>
-				</TouchableOpacity>
-			))}
-		</View>
-	);
-}
-
 export default function Favoritos({ navigation }) {
 	const { width } = useWindowDimensions();
 	const [favorites, setFavorites] = useState(initialFavorites);
@@ -206,7 +167,7 @@ export default function Favoritos({ navigation }) {
 				))}
 			</View>
 
-			<BottomNavigation navigation={navigation} />
+			<NavegacaoInferior activeTab="Favoritos" navigation={navigation} />
 		</SafeAreaView>
 	);
 }
@@ -381,55 +342,5 @@ const styles = StyleSheet.create({
 		fontFamily: 'Montserrat_700Bold',
 		fontSize: 7,
 		textDecorationLine: 'line-through',
-	},
-	tabBar: {
-		height: 58,
-		borderTopWidth: 1,
-		borderTopColor: '#8d8d8d',
-		backgroundColor: palette.background,
-		flexDirection: 'row',
-		alignItems: 'center',
-		justifyContent: 'space-around',
-	},
-	tab: {
-		flex: 1,
-		alignItems: 'center',
-		justifyContent: 'center',
-		gap: 1,
-	},
-	tabIcon: {
-		width: 31,
-		height: 31,
-		alignItems: 'center',
-		justifyContent: 'center',
-	},
-	activeTabIcon: {
-		width: 31,
-		height: 31,
-		borderRadius: 8,
-		backgroundColor: '#006d56',
-		alignItems: 'center',
-		justifyContent: 'center',
-	},
-	tabBadge: {
-		position: 'absolute',
-		right: -1,
-		top: 2,
-		width: 12,
-		height: 12,
-		borderRadius: 6,
-		backgroundColor: palette.red,
-		alignItems: 'center',
-		justifyContent: 'center',
-	},
-	tabLabel: {
-		color: '#747474',
-		fontFamily: 'Montserrat_700Bold',
-		fontSize: 8,
-	},
-	activeTabLabel: {
-		color: '#006d56',
-		fontFamily: 'Montserrat_700Bold',
-		fontSize: 8,
 	},
 });

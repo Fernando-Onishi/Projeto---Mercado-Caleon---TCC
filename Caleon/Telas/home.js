@@ -5,6 +5,7 @@ import {
 	Alert,
 	FlatList,
 	Image,
+	Modal,
 	SafeAreaView,
 	ScrollView,
 	StyleSheet,
@@ -16,9 +17,9 @@ import {
 	View,
 } from 'react-native';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import Octicons from '@expo/vector-icons/Octicons';
 import Feather from '@expo/vector-icons/Feather';
 import { auth } from '../Config/FireBaseConfig';
+import NavegacaoInferior from '../Componentes/NavegacaoInferior';
 
 const colors = {
 	green: '#1B4B3D',
@@ -42,6 +43,15 @@ function normalizeSearchText(value) {
 		.replace(/[\u0300-\u036f]/g, '')
 		.toLocaleLowerCase()
 		.trim();
+}
+
+function capitalizeFirstLetter(value) {
+	return value.replace(/^./u, (letter) => letter.toLocaleUpperCase('pt-BR'));
+}
+
+function formatCep(value) {
+	const digits = value.replace(/\D/g, '').slice(0, 8);
+	return digits.length > 5 ? `${digits.slice(0, 5)}-${digits.slice(5)}` : digits;
 }
 
 function ProductCard({ product, width }) {
@@ -121,14 +131,6 @@ const catalogCategories = [
 	{ name: 'Matinais', image: 'https://images.unsplash.com/photo-1533089860892-a7c6f0a88666?auto=format&w=700&q=85' },
 ];
 
-const catalogTabs = [
-	{ label: 'Início', icon: 'home-outline', screen: 'TelaHome' },
-	{ label: 'Favoritos', icon: 'heart-outline', screen: 'TelaFavorito' },
-	{ label: 'Sacola', icon: 'shopping-outline' },
-	{ label: 'Catálogo', icon: 'clipboard-list-outline', active: true },
-	{ label: 'Perfil', icon: 'account-outline' },
-];
-
 export function Produtos({ navigation }) {
 	const { width: windowWidth } = useWindowDimensions();
 	const cardWidth = (windowWidth - 50) / 2;
@@ -170,22 +172,11 @@ export function Produtos({ navigation }) {
 					showsVerticalScrollIndicator={false}
 					style={catalogStyles.list}
 				/>
-				<View style={catalogStyles.tabBar}>
-					{catalogTabs.map((tab) => {
-						const active = Boolean(tab.active);
-						return (
-							<TouchableOpacity key={tab.label} style={catalogStyles.tab} onPress={() => {
-								if (tab.screen) navigation.navigate(tab.screen);
-								else if (!active) unavailable(tab.label);
-							}} accessibilityRole="button" accessibilityState={{ selected: active }}>
-								<View style={[catalogStyles.tabIcon, active && catalogStyles.activeTabIcon]}>
-									<MaterialCommunityIcons name={tab.icon} size={23} color={active ? 'white' : colors.muted} />
-								</View>
-								<Text style={[catalogStyles.tabLabel, active && catalogStyles.activeTabLabel]}>{tab.label}</Text>
-							</TouchableOpacity>
-						);
-					})}
-				</View>
+				<NavegacaoInferior
+					activeTab="Catálogo"
+					navigation={navigation}
+					onUnavailable={unavailable}
+				/>
 			</View>
 		</SafeAreaView>
 	);
@@ -207,24 +198,22 @@ const catalogStyles = StyleSheet.create({
 	card: { padding: 9, alignItems: 'center', justifyContent: 'space-between', borderRadius: 15, borderWidth: StyleSheet.hairlineWidth, borderColor: '#D1D6D4', backgroundColor: colors.white, shadowColor: '#525A57', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.14, shadowRadius: 5, elevation: 3 },
 	image: { width: '100%', flex: 1, borderRadius: 9 },
 	categoryName: { marginTop: 7, color: colors.ink, fontFamily: 'LilitaOne_400Regular', fontSize: 18, textAlign: 'center' },
-	tabBar: { minHeight: 68, paddingTop: 8, paddingBottom: 5, borderTopWidth: 1, borderTopColor: '#AEB5B2', backgroundColor: '#F1F3F4', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around' },
-	tab: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 2 },
-	tabIcon: { width: 33, height: 30, alignItems: 'center', justifyContent: 'center' },
-	activeTabIcon: { borderRadius: 9, backgroundColor: colors.green },
-	tabLabel: { color: colors.muted, fontFamily: 'Montserrat_700Bold', fontSize: 9 },
-	activeTabLabel: { color: colors.green },
 });
 
 export default function Home({ navigation }) {
 	const { width: windowWidth } = useWindowDimensions();
 	const productCardWidth = windowWidth * 0.335;
 	const [fontsLoaded] = useFonts({
+		Lalezar_400Regular: require('@expo-google-fonts/lalezar/400Regular/Lalezar_400Regular.ttf'),
 		LilitaOne_400Regular: require('@expo-google-fonts/lilita-one/400Regular/LilitaOne_400Regular.ttf'),
 		Montserrat_400Regular: require('@expo-google-fonts/montserrat/400Regular/Montserrat_400Regular.ttf'),
 		Montserrat_500Medium: require('@expo-google-fonts/montserrat/500Medium/Montserrat_500Medium.ttf'),
 		Montserrat_700Bold: require('@expo-google-fonts/montserrat/700Bold/Montserrat_700Bold.ttf'),
 	});
 	const [userName, setUserName] = useState('usuário');
+	const [cep, setCep] = useState('61760-640');
+	const [cepDraft, setCepDraft] = useState('61760-640');
+	const [isCepModalVisible, setIsCepModalVisible] = useState(false);
 	const [searchText, setSearchText] = useState('');
 	const normalizedSearchText = normalizeSearchText(searchText);
 	const isSearching = normalizedSearchText.length > 0;
@@ -236,7 +225,8 @@ export default function Home({ navigation }) {
 		: [];
 
 	useEffect(() => onAuthStateChanged(auth, (user) => {
-		setUserName(user?.displayName?.trim() || 'usuário');
+		const displayName = user?.displayName?.trim() || 'usuário';
+		setUserName(capitalizeFirstLetter(displayName));
 	}), []);
 
 	if (!fontsLoaded) return null;
@@ -250,6 +240,22 @@ export default function Home({ navigation }) {
 		}
 	}
 
+	function openCepEditor() {
+		setCepDraft(cep);
+		setIsCepModalVisible(true);
+	}
+
+	function saveCep() {
+		const formattedCep = formatCep(cepDraft);
+		if (formattedCep.replace(/\D/g, '').length !== 8) {
+			Alert.alert('CEP inválido', 'Informe os 8 números do CEP.');
+			return;
+		}
+
+		setCep(formattedCep);
+		setIsCepModalVisible(false);
+	}
+
 	return (
 		<SafeAreaView style={styles.safeArea}>
 			<View style={styles.header}>
@@ -258,8 +264,20 @@ export default function Home({ navigation }) {
 				</View>
 				<View style={styles.locationText}>
 					<Text style={styles.greeting} numberOfLines={1}>Olá, {userName}</Text>
-					<Text style={styles.address} numberOfLines={1}>R. Joaquim Nabuco, 131 - Fátima</Text>
-					<Text style={styles.cep}>61760-640</Text>
+					<Text style={styles.address} numberOfLines={1}>
+						{capitalizeFirstLetter('R. Joaquim Nabuco, 131 - Fátima')}
+					</Text>
+					<View style={styles.cepRow}>
+						<Text style={styles.cep}>{cep}</Text>
+						<TouchableOpacity
+							style={styles.editCepButton}
+							onPress={openCepEditor}
+							accessibilityRole="button"
+							accessibilityLabel="Alterar CEP"
+						>
+							<Feather name="edit-2" size={13} color={colors.white} />
+						</TouchableOpacity>
+					</View>
 				</View>
 				<TouchableOpacity
 					style={styles.logoutButton}
@@ -275,6 +293,43 @@ export default function Home({ navigation }) {
 					<View style={styles.badge}><Text style={styles.badgeText}>1</Text></View>
 				</TouchableOpacity>
 			</View>
+
+			<Modal
+				visible={isCepModalVisible}
+				transparent
+				animationType="fade"
+				onRequestClose={() => setIsCepModalVisible(false)}
+			>
+				<View style={styles.modalBackdrop}>
+					<View style={styles.cepModal}>
+						<Text style={styles.cepModalTitle}>Alterar CEP</Text>
+						<TextInput
+							style={styles.cepInput}
+							value={cepDraft}
+							onChangeText={(value) => setCepDraft(formatCep(value))}
+							placeholder="00000-000"
+							placeholderTextColor={colors.muted}
+							keyboardType="number-pad"
+							maxLength={9}
+							accessibilityLabel="Novo CEP"
+						/>
+						<View style={styles.cepModalActions}>
+							<TouchableOpacity
+								style={[styles.cepModalButton, styles.cancelCepButton]}
+								onPress={() => setIsCepModalVisible(false)}
+							>
+								<Text style={styles.cancelCepText}>Cancelar</Text>
+							</TouchableOpacity>
+							<TouchableOpacity
+								style={[styles.cepModalButton, styles.saveCepButton]}
+								onPress={saveCep}
+							>
+								<Text style={styles.saveCepText}>Salvar</Text>
+							</TouchableOpacity>
+						</View>
+					</View>
+				</View>
+			</Modal>
 
 			<View style={styles.contentArea}>
 				<View style={styles.searchBox}>
@@ -297,7 +352,7 @@ export default function Home({ navigation }) {
 						</View>
 						<ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesRow}>
 							<View style={styles.categoryFilter} accessibilityLabel="Filtros de categorias">
-								<Feather name="sliders" size={25} color={colors.white} />
+								<Feather name="sliders" size={17} color={colors.white} />
 							</View>
 							{categories.map((category) => (
 								<TouchableOpacity key={category} style={styles.category}>
@@ -343,29 +398,7 @@ export default function Home({ navigation }) {
 				</ScrollView>
 			</View>
 
-			<View style={styles.tabBar}>
-				{[
-					['⌂', 'Início', true], ['♡', 'Favoritos'], ['♧', 'Sacola'], ['▣', 'Catálogo'], ['♙', 'Perfil'],
-				].map(([icon, label, active]) => (
-					<TouchableOpacity
-						style={styles.tab}
-						key={label}
-						onPress={() => {
-							if (label === 'Catálogo') navigation.navigate('TelaProdutos');
-							if (label === 'Favoritos') navigation.navigate('TelaFavorito');
-						}}
-					>
-						<View style={active ? styles.activeTabIcon : styles.tabIcon}>
-							{label === 'Início' ? (
-								<Octicons name={active ? 'home-fill' : 'home'} size={24} color={active ? 'white' : '#757575'} />
-							) : (
-								<Text style={active ? styles.activeIconText : styles.iconText}>{icon}</Text>
-							)}
-						</View>
-						<Text style={active ? styles.activeTabLabel : styles.tabLabel}>{label}</Text>
-					</TouchableOpacity>
-				))}
-			</View>
+			<NavegacaoInferior activeTab="Início" navigation={navigation} />
 		</SafeAreaView>
 	);
 }
@@ -384,7 +417,7 @@ const styles = StyleSheet.create({
 	},
 
 	header: {
-		height: 76,
+		height: 90,
 		backgroundColor: colors.green,
 		flexDirection: 'row',
 		alignItems: 'center',
@@ -404,20 +437,34 @@ const styles = StyleSheet.create({
 	},
 	greeting: {
 		color: colors.white,
-		fontFamily: 'Montserrat_500Medium',
-		fontSize: 12,
+		fontFamily: 'Lalezar_400Regular',
+		fontSize: 17,
+		lineHeight: 22,
 	},
 	address: {
 		color: colors.white,
-		fontFamily: 'Montserrat_400Regular',
-		fontSize: 9,
-		marginTop: 3,
+		fontFamily: 'Lalezar_400Regular',
+		fontSize: 14,
+		lineHeight: 19,
 	},
 	cep: {
 		color: '#9dc6b7',
-		fontFamily: 'Montserrat_400Regular',
-		fontSize: 8,
-		marginTop: 2,
+		fontFamily: 'Lalezar_400Regular',
+		fontSize: 13,
+		lineHeight: 18,
+	},
+	cepRow: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: 7,
+	},
+	editCepButton: {
+		width: 20,
+		height: 20,
+		borderRadius: 10,
+		backgroundColor: '#40B190',
+		alignItems: 'center',
+		justifyContent: 'center',
 	},
 	bagButton: {
 		width: 40,
@@ -440,6 +487,66 @@ const styles = StyleSheet.create({
 		color: colors.green,
 		fontFamily: 'Montserrat_500Medium',
 		fontSize: 11,
+	},
+	modalBackdrop: {
+		flex: 1,
+		backgroundColor: 'rgba(0, 0, 0, 0.45)',
+		alignItems: 'center',
+		justifyContent: 'center',
+		paddingHorizontal: 24,
+	},
+	cepModal: {
+		width: '100%',
+		maxWidth: 360,
+		padding: 20,
+		borderRadius: 18,
+		backgroundColor: colors.white,
+	},
+	cepModalTitle: {
+		color: colors.ink,
+		fontFamily: 'LilitaOne_400Regular',
+		fontSize: 22,
+		marginBottom: 14,
+	},
+	cepInput: {
+		height: 48,
+		paddingHorizontal: 14,
+		borderWidth: 1,
+		borderColor: '#cbd2cf',
+		borderRadius: 10,
+		color: colors.ink,
+		fontFamily: 'Montserrat_500Medium',
+		fontSize: 16,
+	},
+	cepModalActions: {
+		flexDirection: 'row',
+		justifyContent: 'flex-end',
+		gap: 10,
+		marginTop: 16,
+	},
+	cepModalButton: {
+		minWidth: 90,
+		height: 40,
+		paddingHorizontal: 14,
+		borderRadius: 10,
+		alignItems: 'center',
+		justifyContent: 'center',
+	},
+	cancelCepButton: {
+		backgroundColor: '#e7ecea',
+	},
+	saveCepButton: {
+		backgroundColor: colors.green,
+	},
+	cancelCepText: {
+		color: colors.ink,
+		fontFamily: 'Montserrat_500Medium',
+		fontSize: 13,
+	},
+	saveCepText: {
+		color: colors.white,
+		fontFamily: 'Montserrat_700Bold',
+		fontSize: 13,
 	},
 	badge: {
 		position: 'absolute',
@@ -495,29 +602,29 @@ const styles = StyleSheet.create({
 	},
 	categoriesRow: {
 		paddingHorizontal: 15,
-		gap: 11,
-		paddingVertical: 12,
+		gap: 9,
+		paddingVertical: 10,
 		alignItems: 'center',
 	},
 	categoryFilter: {
-		width: 60,
-		height: 44,
+		width: 50,
+		height: 36,
 		backgroundColor: colors.green,
-		borderRadius: 24,
+		borderRadius: 20,
 		alignItems: 'center',
 		justifyContent: 'center',
 	},
 	category: {
 		backgroundColor: colors.green,
-		paddingHorizontal: 15,
-		height: 44,
+		paddingHorizontal: 12,
+		height: 36,
 		justifyContent: 'center',
-		borderRadius: 24,
+		borderRadius: 20,
 	},
 	categoryText: {
 		color: colors.white,
 		fontFamily: 'Montserrat_700Bold',
-		fontSize: 17,
+		fontSize: 14,
 	},
 
 	scrollContent: {
@@ -638,50 +745,4 @@ const styles = StyleSheet.create({
 		fontSize: 6,
 	},
 
-	tabBar: {
-		height: 56,
-		borderTopWidth: 1,
-		borderTopColor: '#d7dddd',
-		backgroundColor: colors.white,
-		flexDirection: 'row',
-		justifyContent: 'space-around',
-		paddingTop: 5,
-	},
-	tab: {
-		alignItems: 'center',
-		width: 55,
-	},
-	tabIcon: {
-		height: 27,
-		justifyContent: 'center',
-	},
-	activeTabIcon: {
-		width: 24,
-		height: 24,
-		borderRadius: 6,
-		backgroundColor: colors.green,
-		alignItems: 'center',
-		justifyContent: 'center',
-	},
-	iconText: {
-		color: '#7a8381',
-		fontSize: 20,
-	},
-	activeIconText: {
-		color: colors.white,
-		fontSize: 20,
-		lineHeight: 22,
-	},
-	tabLabel: {
-		color: '#7a8381',
-		fontFamily: 'Montserrat_400Regular',
-		fontSize: 8,
-		marginTop: 2,
-	},
-	activeTabLabel: {
-		color: colors.green,
-		fontFamily: 'Montserrat_500Medium',
-		fontSize: 8,
-		marginTop: 2,
-	},
 });

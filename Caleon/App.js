@@ -8,6 +8,7 @@ import TelaSplash from './Telas/Splash';
 import TelaCadastro from './Telas/cadastro';
 import TelaLogin from './Telas/login';
 import TelaFavorito from './Telas/Favoritos';
+import TelaSacola from './Telas/sacola';
 import { Produtos as TelaProdutos } from './Telas/home';
 
 const Stack = createNativeStackNavigator();
@@ -22,6 +23,7 @@ export default function App() {
         <Stack.Screen name="TelaHome" component={TelaHome} />
         <Stack.Screen name="TelaProdutos" component={TelaProdutos} />
         <Stack.Screen name="TelaFavorito" component={TelaFavorito} />
+        <Stack.Screen name="TelaSacola" component={TelaSacola} />
       </Stack.Navigator>
     </NavigationContainer>
   );
