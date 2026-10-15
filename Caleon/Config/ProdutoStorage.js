@@ -33,6 +33,18 @@ export async function getCartCount() {
 	return items.reduce((count, item) => count + Math.max(0, Number(item.quantidade) || 0), 0);
 }
 
+export async function getCartProductIds() {
+	const items = await readArray(CART_STORAGE_KEY);
+	return [...new Set(items.map((item) => item.productId).filter(Boolean))];
+}
+
+export async function removeProductFromCart(productId) {
+	const items = await readArray(CART_STORAGE_KEY);
+	const nextItems = items.filter((item) => item.productId !== productId);
+	await AsyncStorage.setItem(CART_STORAGE_KEY, JSON.stringify(nextItems));
+	return nextItems;
+}
+
 export async function addProductToCart(product, weightGrams) {
 	const items = await readArray(CART_STORAGE_KEY);
 	const itemId = `${product.id}-${weightGrams}`;

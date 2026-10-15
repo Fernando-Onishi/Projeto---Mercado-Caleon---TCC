@@ -1,11 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useFonts } from 'expo-font';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { onAuthStateChanged } from 'firebase/auth';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
 	Alert,
+	Animated,
 	FlatList,
 	Image,
 	Modal,
+	PanResponder,
 	SafeAreaView,
 	ScrollView,
 	StyleSheet,
@@ -13,41 +16,85 @@ import {
 	Text,
 	TextInput,
 	TouchableOpacity,
+	KeyboardAvoidingView,
+	Platform,
 	useWindowDimensions,
 	View,
 } from 'react-native';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import Feather from '@expo/vector-icons/Feather';
 import { auth } from '../Config/FireBaseConfig';
+import BotaoSacola from '../Componentes/BotaoSacola';
+import { getProfileStorageKey } from '../Config/PerfilStorage';
 import { formatCurrency, formatWeight, getProductPrice, PRODUCTS } from '../Config/Produtos';
-import { addProductToCart, getFavorites, toggleFavorite } from '../Config/ProdutoStorage';
+import {
+	addProductToCart,
+	getCartProductIds,
+	getFavorites,
+	removeProductFromCart,
+	toggleFavorite,
+} from '../Config/ProdutoStorage';
 import NavegacaoInferior from '../Componentes/NavegacaoInferior';
-import useSacolaCount, { publishSacolaCount } from '../Componentes/useSacolaCount';
+import { publishSacolaCount } from '../Componentes/useSacolaCount';
 
 const colors = {
 	green: '#1B4B3D',
+	lightGreen: '#00AA6A',
+	red: '#FF383C',
 	ink: '#111715',
 	muted: '#75807c',
 	surface: '#f5f7f7',
 	white: '#ffffff',
 };
 
+const FILTER_SHEET_HEIGHT_RATIO = 0.57;
+
 const products = PRODUCTS.map((product) => ({
 	...product,
 	price: formatCurrency(getProductPrice(product, product.defaultWeightGrams)),
+	originalPrice: product.originalPricePerKg
+		? formatCurrency(getProductPrice(
+			{ ...product, pricePerKg: product.originalPricePerKg },
+			product.defaultWeightGrams,
+		))
+		: null,
 	weight: formatWeight(product.defaultWeightGrams),
 	discount: product.originalPricePerKg
 		? `${Math.round((1 - product.pricePerKg / product.originalPricePerKg) * 100)}% OFF`
 		: null,
 }));
 
-const categories = ['Hortifruti', 'Carnes', 'Bebidas', 'Laticínios', 'Limpeza'];
+const categories = [
+	'HortiFruti',
+	'Carnes',
+	'Bebidas',
+	'Laticínios',
+	'Doces',
+	'Congelados',
+	'Higiene',
+	'Padaria',
+	'Limpeza',
+];
+
+const filterOptions = [
+	{ name: 'Horti-Fruti', category: 'HortiFruti', icon: 'food-apple-outline' },
+	{ name: 'Carnes', category: 'Carnes', icon: 'food-steak' },
+	{ name: 'Bebidas', category: 'Bebidas', icon: 'cup-outline' },
+	{ name: 'Laticínios', category: 'Laticínios', icon: 'cheese' },
+	{ name: 'Doces', category: 'Doces', icon: 'candy-outline' },
+	{ name: 'Congelados', category: 'Congelados', icon: 'snowflake' },
+	{ name: 'Higiene', category: 'Higiene', icon: 'hand-wash' },
+	{ name: 'Padaria', category: 'Padaria', icon: 'bread-slice' },
+	{ name: 'Limpeza', category: 'Limpeza', icon: 'spray-bottle' },
+	{ name: 'Preço', type: 'price', icon: 'sort-ascending' },
+];
 
 function normalizeSearchText(value) {
 	return value
 		.normalize('NFD')
 		.replace(/[\u0300-\u036f]/g, '')
 		.toLocaleLowerCase()
+		.replace(/[^a-z0-9]/g, '')
 		.trim();
 }
 
@@ -57,10 +104,10 @@ function capitalizeFirstLetter(value) {
 
 function formatCep(value) {
 	const digits = value.replace(/\D/g, '').slice(0, 8);
-	return digits.length > 5 ? `${digits.slice(0, 5)}-${digits.slice(5)}` : digits;
+	return digits.replace(/^(\d{5})(\d)/, '$1-$2');
 }
 
-function ProductCard({ product, width, onOpen, onAddToBag, onToggleFavorite, isFavorite }) {
+function ProductCard({ product, width, onOpen, onToggleCart, onToggleFavorite, isFavorite, isInCart }) {
 	const scale = width / 145;
 
 	return (
@@ -89,30 +136,46 @@ function ProductCard({ product, width, onOpen, onAddToBag, onToggleFavorite, isF
 						accessibilityRole="button"
 						accessibilityLabel={`${isFavorite ? 'Remover' : 'Adicionar'} ${product.name} ${isFavorite ? 'dos' : 'aos'} favoritos`}
 					>
-						<MaterialCommunityIcons name={isFavorite ? 'heart' : 'heart-outline'} size={12 * scale} color={isFavorite ? '#FF0000' : colors.green} />
+						<MaterialCommunityIcons
+							name={isFavorite ? 'heart' : 'heart-outline'}
+							size={12 * scale}
+							color={isFavorite ? colors.white : '#7A8581'}
+						/>
 					</TouchableOpacity>
 				</View>
 				<Text style={[styles.productName, { fontSize: 10 * scale, marginTop: 4 * scale }]} numberOfLines={1}>
 					{product.name} <Text style={[styles.weight, { fontSize: 7 * scale }]}>{product.weight}</Text>
 				</Text>
-				<Text style={[styles.price, { fontSize: 12 * scale, marginTop: 1 * scale }]}>{product.price}</Text>
+				<View style={styles.priceRow}>
+					<Text style={[styles.price, { fontSize: 12 * scale, marginTop: 1 * scale }]}>{product.price}</Text>
+					{product.originalPrice ? (
+						<Text style={[styles.originalPrice, { fontSize: 7 * scale }]}>
+							{product.originalPrice}
+						</Text>
+					) : null}
+				</View>
 			</TouchableOpacity>
 			<TouchableOpacity
-				style={[styles.addButton, {
+				style={[styles.addButton, isInCart && styles.addedButton, {
 					height: 15 * scale,
 					borderRadius: 8 * scale,
 					marginTop: 4 * scale,
 				}]}
 				activeOpacity={0.8}
-				onPress={() => onAddToBag(product)}
+				onPress={() => onToggleCart(product, isInCart)}
+				accessibilityRole="button"
+				accessibilityLabel={`${product.name}, ${isInCart ? 'remover da' : 'adicionar à'} sacola`}
 			>
-				<Text style={[styles.addButtonText, { fontSize: 6 * scale }]}>＋ Adicionar à sacola</Text>
+				<MaterialCommunityIcons name={isInCart ? 'shopping' : 'shopping-outline'} size={9 * scale} color={colors.white} />
+				<Text style={[styles.addButtonText, { fontSize: 6 * scale }]}>
+					{isInCart ? 'Adicionado' : 'Adicionar à sacola'}
+				</Text>
 			</TouchableOpacity>
 		</View>
 	);
 }
 
-function ProductSection({ title, products: sectionProducts, cardWidth, navigation, favoriteIds, onToggleFavorite, onAddToBag }) {
+function ProductSection({ title, products: sectionProducts, cardWidth, navigation, favoriteIds, cartProductIds, onToggleFavorite, onToggleCart }) {
 	return (
 		<View style={styles.section}>
 			<View style={styles.sectionHeader}>
@@ -127,9 +190,10 @@ function ProductSection({ title, products: sectionProducts, cardWidth, navigatio
 						product={product}
 						width={cardWidth}
 						onOpen={() => navigation.navigate('TelaDetalheProduto', { productId: product.id })}
-						onAddToBag={onAddToBag}
+						onToggleCart={onToggleCart}
 						onToggleFavorite={onToggleFavorite}
 						isFavorite={favoriteIds.includes(product.id)}
+						isInCart={cartProductIds.includes(product.id)}
 						key={`${title}-${product.id}`}
 					/>
 				))}
@@ -165,13 +229,10 @@ export function Produtos({ navigation }) {
 						if (navigation.canGoBack()) navigation.goBack();
 						else navigation.navigate('TelaHome');
 					}} accessibilityLabel="Voltar">
-						<MaterialCommunityIcons name="arrow-left" size={22} color="white" />
+						<Feather name="chevron-left" size={27} color="white" />
 					</TouchableOpacity>
 					<Text style={catalogStyles.title}>Produtos</Text>
-					<TouchableOpacity style={catalogStyles.bagButton} onPress={() => unavailable('Sacola')} accessibilityLabel="Abrir sacola, 1 item">
-						<MaterialCommunityIcons name="shopping-outline" size={25} color="white" />
-						<View style={catalogStyles.badge}><Text style={catalogStyles.badgeText}>1</Text></View>
-					</TouchableOpacity>
+					<BotaoSacola navigation={navigation} />
 				</View>
 				<FlatList
 					data={catalogCategories}
@@ -201,13 +262,10 @@ export function Produtos({ navigation }) {
 const catalogStyles = StyleSheet.create({
 	safeArea: { flex: 1, backgroundColor: colors.green },
 	topBand: { height: 40, backgroundColor: colors.green },
-	screen: { flex: 1, marginTop: -1, borderTopLeftRadius: 28, borderTopRightRadius: 28, backgroundColor: '#F1F3F4', overflow: 'hidden' },
+	screen: { flex: 1, marginTop: -1, borderTopLeftRadius: 28, borderTopRightRadius: 28, backgroundColor: '#F1F3F5', overflow: 'hidden' },
 	header: { height: 72, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-	backButton: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: '#43B196' },
+	backButton: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#40B190' },
 	title: { position: 'absolute', left: 56, right: 56, textAlign: 'center', color: colors.ink, fontFamily: 'LilitaOne_400Regular', fontSize: 30 },
-	bagButton: { width: 38, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: '#43B196' },
-	badge: { position: 'absolute', right: -4, top: -5, minWidth: 17, height: 17, paddingHorizontal: 3, borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F04449' },
-	badgeText: { color: colors.white, fontFamily: 'Montserrat_700Bold', fontSize: 9 },
 	list: { flex: 1 },
 	grid: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 22, gap: 48 },
 	row: { justifyContent: 'space-between', gap: 18 },
@@ -217,9 +275,8 @@ const catalogStyles = StyleSheet.create({
 });
 
 export default function Home({ navigation }) {
-	const { width: windowWidth } = useWindowDimensions();
+	const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 	const productCardWidth = windowWidth * 0.335;
-	const bagCount = useSacolaCount();
 	const [fontsLoaded] = useFonts({
 		Lalezar_400Regular: require('@expo-google-fonts/lalezar/400Regular/Lalezar_400Regular.ttf'),
 		LilitaOne_400Regular: require('@expo-google-fonts/lilita-one/400Regular/LilitaOne_400Regular.ttf'),
@@ -228,11 +285,56 @@ export default function Home({ navigation }) {
 		Montserrat_700Bold: require('@expo-google-fonts/montserrat/700Bold/Montserrat_700Bold.ttf'),
 	});
 	const [userName, setUserName] = useState('usuário');
-	const [cep, setCep] = useState('61760-640');
-	const [cepDraft, setCepDraft] = useState('61760-640');
+	const [address, setAddress] = useState('');
+	const [addressDraft, setAddressDraft] = useState('');
+	const [cep, setCep] = useState('');
+	const [cepDraft, setCepDraft] = useState('');
 	const [isCepModalVisible, setIsCepModalVisible] = useState(false);
+	const [isFilterModalVisible, setIsFilterModalVisible] = useState(false);
 	const [searchText, setSearchText] = useState('');
+	const [selectedCategories, setSelectedCategories] = useState(['HortiFruti']);
+	const [priceSortDirection, setPriceSortDirection] = useState(null);
 	const [favoriteIds, setFavoriteIds] = useState([]);
+	const [cartProductIds, setCartProductIds] = useState([]);
+	const pendingCartProductIds = useRef(new Set());
+	const filterSheetTranslateY = useRef(new Animated.Value(0)).current;
+	const filterSheetPanResponder = useMemo(() => PanResponder.create({
+		onMoveShouldSetPanResponder: (_, gestureState) => (
+			gestureState.dy > 5 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx)
+		),
+		onPanResponderMove: (_, gestureState) => {
+			filterSheetTranslateY.setValue(Math.max(0, gestureState.dy));
+		},
+		onPanResponderRelease: (_, gestureState) => {
+			if (gestureState.dy > 100 || (gestureState.dy > 20 && gestureState.vy > 0.7)) {
+				Animated.timing(filterSheetTranslateY, {
+					toValue: windowHeight,
+					duration: 180,
+					useNativeDriver: true,
+				}).start(({ finished }) => {
+					if (finished) {
+						setIsFilterModalVisible(false);
+						filterSheetTranslateY.setValue(0);
+					}
+				});
+				return;
+			}
+			Animated.spring(filterSheetTranslateY, {
+				toValue: 0,
+				useNativeDriver: true,
+				tension: 90,
+				friction: 12,
+			}).start();
+		},
+		onPanResponderTerminate: () => {
+			Animated.spring(filterSheetTranslateY, {
+				toValue: 0,
+				useNativeDriver: true,
+				tension: 90,
+				friction: 12,
+			}).start();
+		},
+	}), [filterSheetTranslateY, windowHeight]);
 	const normalizedSearchText = normalizeSearchText(searchText);
 	const isSearching = normalizedSearchText.length > 0;
 	const matchingProducts = isSearching
@@ -242,19 +344,60 @@ export default function Home({ navigation }) {
 		? categories.filter((category) => normalizeSearchText(category).includes(normalizedSearchText))
 		: [];
 
-	useEffect(() => onAuthStateChanged(auth, (user) => {
-		const displayName = user?.displayName?.trim() || 'usuário';
-		setUserName(capitalizeFirstLetter(displayName));
-	}), []);
+	useEffect(() => {
+		let active = true;
+
+		async function loadHeaderProfile(user) {
+			try {
+				const stored = JSON.parse(
+					await AsyncStorage.getItem(getProfileStorageKey(user?.uid)) || '{}',
+				);
+				if (!active) return;
+				const displayName = user?.displayName?.trim()
+					|| (typeof stored.name === 'string' ? stored.name.trim() : '')
+					|| 'Usuário';
+				setUserName(capitalizeFirstLetter(displayName));
+				setAddress(
+					(typeof stored.address === 'string' ? stored.address.trim() : '')
+					|| '',
+				);
+				setCep(formatCep(typeof stored.cep === 'string' ? stored.cep : ''));
+			} catch (error) {
+				console.error('Não foi possível carregar o perfil para o cabeçalho.', error);
+				if (!active) return;
+				setUserName(user?.displayName?.trim() || 'Usuário');
+				console.error('Não foi possível carregar o endereço salvo do perfil.');
+			}
+		}
+
+		const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+			loadHeaderProfile(user);
+		});
+		const unsubscribeFocus = navigation.addListener('focus', () => {
+			loadHeaderProfile(auth.currentUser);
+		});
+
+		return () => {
+			active = false;
+			unsubscribeAuth();
+			unsubscribeFocus();
+		};
+	}, [navigation]);
 
 	useEffect(() => {
 		let active = true;
-		async function loadFavorites() {
-			const ids = await getFavorites();
-			if (active) setFavoriteIds(ids);
+		async function loadProductStates() {
+			const [ids, productIds] = await Promise.all([
+				getFavorites(),
+				getCartProductIds(),
+			]);
+			if (active) {
+				setFavoriteIds(ids);
+				setCartProductIds(productIds);
+			}
 		}
-		loadFavorites();
-		const unsubscribe = navigation.addListener('focus', loadFavorites);
+		loadProductStates();
+		const unsubscribe = navigation.addListener('focus', loadProductStates);
 		return () => {
 			active = false;
 			unsubscribe();
@@ -263,23 +406,62 @@ export default function Home({ navigation }) {
 
 	if (!fontsLoaded) return null;
 
-	async function handleSignOut() {
+	function openCepEditor() {
+		setAddressDraft(address);
+		setCepDraft(cep);
+		setIsCepModalVisible(true);
+	}
+
+	async function saveAddress() {
+		const trimmedAddress = addressDraft.trim();
+		const formattedCep = formatCep(cepDraft);
+		const cepDigits = formattedCep.replace(/\D/g, '');
+
+		if (!trimmedAddress) {
+			Alert.alert('Endereço', 'Informe a rua e os dados do seu endereço.');
+			return;
+		}
+		if (cepDigits.length > 0 && cepDigits.length !== 8) {
+			Alert.alert('CEP inválido', 'Informe os 8 números do CEP.');
+			return;
+		}
+
 		try {
-			await signOut(auth);
-			navigation.replace('TelaLogin');
-		} catch {
-			Alert.alert('Sair', 'Não foi possível encerrar sua sessão. Tente novamente.');
+			const profileKey = getProfileStorageKey(auth.currentUser?.uid);
+			const stored = JSON.parse(await AsyncStorage.getItem(profileKey) || '{}');
+			await AsyncStorage.setItem(profileKey, JSON.stringify({
+				...stored,
+				address: trimmedAddress,
+				cep: formattedCep,
+			}));
+			setAddress(trimmedAddress);
+			setCep(formattedCep);
+			setIsCepModalVisible(false);
+		} catch (error) {
+			console.error('Não foi possível salvar o endereço do perfil.', error);
+			Alert.alert('Endereço', 'Não foi possível salvar o endereço. Tente novamente.');
 		}
 	}
 
-	async function handleAddToBag(product) {
+	async function handleToggleCart(product, isInCart) {
+		if (pendingCartProductIds.current.has(product.id)) return;
+		pendingCartProductIds.current.add(product.id);
+
 		try {
-			const nextItems = await addProductToCart(product, product.defaultWeightGrams);
+			const nextItems = isInCart
+				? await removeProductFromCart(product.id)
+				: await addProductToCart(product, product.defaultWeightGrams);
+			setCartProductIds((currentIds) => (
+				isInCart
+					? currentIds.filter((id) => id !== product.id)
+					: currentIds.includes(product.id) ? currentIds : [...currentIds, product.id]
+			));
 			publishSacolaCount(nextItems);
-			navigation.navigate('TelaSacola');
 		} catch (error) {
-			console.error('Erro ao adicionar item na sacola:', error);
-			Alert.alert('Sacola', 'Não foi possível adicionar o produto à sacola.');
+			console.error('Erro ao atualizar a sacola:', error);
+			Alert.alert('Sacola', `Não foi possível ${isInCart ? 'remover o produto da' : 'adicionar o produto à'} sacola.`);
+		} finally {
+			pendingCartProductIds.current.delete(product.id);
 		}
 	}
 
@@ -292,67 +474,72 @@ export default function Home({ navigation }) {
 		}
 	}
 
-	function openCepEditor() {
-		setCepDraft(cep);
-		setIsCepModalVisible(true);
+	const categoryProducts = selectedCategories.length === 0
+		? products
+		: products.filter((product) => selectedCategories.some(
+			(category) => normalizeSearchText(product.category) === normalizeSearchText(category),
+		));
+	const displayedCategoryProducts = priceSortDirection
+		? [...categoryProducts].sort((first, second) => {
+			const priceDifference = getProductPrice(first, first.defaultWeightGrams)
+				- getProductPrice(second, second.defaultWeightGrams);
+			return priceSortDirection === 'ascending' ? priceDifference : -priceDifference;
+		})
+		: categoryProducts;
+
+	function selectFilter(option) {
+		if (option.type === 'price') {
+			setPriceSortDirection((direction) => (
+				direction === null
+					? 'ascending'
+					: direction === 'ascending'
+						? 'descending'
+						: null
+			));
+		} else {
+			setSelectedCategories((currentCategories) => (
+				currentCategories.some((category) => (
+					normalizeSearchText(category) === normalizeSearchText(option.category)
+				))
+					? currentCategories.filter((category) => (
+						normalizeSearchText(category) !== normalizeSearchText(option.category)
+					))
+					: [...currentCategories, option.category]
+			));
+		}
 	}
 
-	function saveCep() {
-		const formattedCep = formatCep(cepDraft);
-		if (formattedCep.replace(/\D/g, '').length !== 8) {
-			Alert.alert('CEP inválido', 'Informe os 8 números do CEP.');
-			return;
-		}
-
-		setCep(formattedCep);
-		setIsCepModalVisible(false);
+	function isFilterSelected(option) {
+		return option.type === 'price'
+			? priceSortDirection !== null
+			: selectedCategories.some((category) => (
+				normalizeSearchText(category) === normalizeSearchText(option.category)
+			));
 	}
 
 	return (
 		<SafeAreaView style={styles.safeArea}>
+			<StatusBar backgroundColor={colors.green} barStyle="light-content" />
 			<View style={styles.header}>
-				<View style={styles.locationIcon}>
-					<Feather name="map-pin" size={40} color="white" />
-				</View>
+				<TouchableOpacity
+					style={styles.locationIcon}
+					onPress={openCepEditor}
+					activeOpacity={0.8}
+					accessibilityRole="button"
+					accessibilityLabel="Editar endereço e CEP"
+				>
+					<Feather name="map-pin" size={30} color={colors.white} />
+				</TouchableOpacity>
 				<View style={styles.locationText}>
 					<Text style={styles.greeting} numberOfLines={1}>Olá, {userName}</Text>
-					<Text style={styles.address} numberOfLines={1}>
-						{capitalizeFirstLetter('R. Joaquim Nabuco, 131 - Fátima')}
-					</Text>
-					<View style={styles.cepRow}>
-						<Text style={styles.cep}>{cep}</Text>
-						<TouchableOpacity
-							style={styles.editCepButton}
-							onPress={openCepEditor}
-							accessibilityRole="button"
-							accessibilityLabel="Alterar CEP"
-						>
-							<Feather name="edit-2" size={13} color={colors.white} />
-						</TouchableOpacity>
-					</View>
+					<Text style={styles.address} numberOfLines={1}>{address}</Text>
+					<TouchableOpacity onPress={openCepEditor} accessibilityRole="button">
+						<Text style={styles.editCep}>
+							{cep || 'não cadastrado'}
+						</Text>
+					</TouchableOpacity>
 				</View>
-				<TouchableOpacity
-					style={styles.logoutButton}
-					activeOpacity={0.8}
-					onPress={handleSignOut}
-					accessibilityRole="button"
-					accessibilityLabel="Sair da conta"
-				>
-					<Text style={styles.logoutText}>Sair</Text>
-				</TouchableOpacity>
-				<TouchableOpacity
-					style={styles.bagButton}
-					onPress={() => navigation.navigate('TelaSacola')}
-					accessibilityRole="button"
-					accessibilityLabel={`Sacola, ${bagCount} ${bagCount === 1 ? 'produto' : 'produtos'}`}
-				>
-					<MaterialCommunityIcons name="shopping-outline" size={40} color="white" />
-					{bagCount > 0 && (
-						<View style={styles.badge}>
-							<Text style={styles.badgeText}>{bagCount > 99 ? '99+' : bagCount}</Text>
-						</View>
-					)}
-				</TouchableOpacity>
+				<BotaoSacola navigation={navigation} />
 			</View>
 
 			<Modal
@@ -361,9 +548,27 @@ export default function Home({ navigation }) {
 				animationType="fade"
 				onRequestClose={() => setIsCepModalVisible(false)}
 			>
-				<View style={styles.modalBackdrop}>
+				<KeyboardAvoidingView
+					style={styles.modalBackdrop}
+					behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+				>
 					<View style={styles.cepModal}>
-						<Text style={styles.cepModalTitle}>Alterar CEP</Text>
+						<Text style={styles.cepModalTitle}>Editar endereço</Text>
+						<Text style={styles.cepModalDescription}>
+							Atualize o endereço completo e o CEP para suas entregas.
+						</Text>
+						<TextInput
+							style={[styles.cepInput, styles.addressInput]}
+							value={addressDraft}
+							onChangeText={setAddressDraft}
+							placeholder="Rua, número, bairro e cidade"
+							placeholderTextColor={colors.muted}
+							multiline
+							textAlignVertical="top"
+							maxLength={180}
+							accessibilityLabel="Endereço completo"
+						/>
+						<Text style={styles.cepFieldLabel}>CEP</Text>
 						<TextInput
 							style={styles.cepInput}
 							value={cepDraft}
@@ -372,7 +577,7 @@ export default function Home({ navigation }) {
 							placeholderTextColor={colors.muted}
 							keyboardType="number-pad"
 							maxLength={9}
-							accessibilityLabel="Novo CEP"
+							accessibilityLabel="CEP do endereço"
 						/>
 						<View style={styles.cepModalActions}>
 							<TouchableOpacity
@@ -383,13 +588,13 @@ export default function Home({ navigation }) {
 							</TouchableOpacity>
 							<TouchableOpacity
 								style={[styles.cepModalButton, styles.saveCepButton]}
-								onPress={saveCep}
+								onPress={saveAddress}
 							>
 								<Text style={styles.saveCepText}>Salvar</Text>
 							</TouchableOpacity>
 						</View>
 					</View>
-				</View>
+				</KeyboardAvoidingView>
 			</Modal>
 
 			<View style={styles.contentArea}>
@@ -412,12 +617,28 @@ export default function Home({ navigation }) {
 							<View style={styles.banner} />
 						</View>
 						<ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesRow}>
-							<View style={styles.categoryFilter} accessibilityLabel="Filtros de categorias">
+							<TouchableOpacity
+								style={styles.categoryFilter}
+								onPress={() => setIsFilterModalVisible(true)}
+								activeOpacity={0.8}
+								accessibilityRole="button"
+								accessibilityLabel="Abrir filtros de produtos"
+							>
 								<Feather name="sliders" size={17} color={colors.white} />
-							</View>
-							{categories.map((category) => (
-								<TouchableOpacity key={category} style={styles.category}>
-									<Text style={styles.categoryText}>{category}</Text>
+							</TouchableOpacity>
+							{filterOptions.map((option) => (
+								<TouchableOpacity
+									key={option.name}
+									style={[styles.category, isFilterSelected(option) && styles.selectedCategory]}
+									onPress={() => selectFilter(option)}
+									accessibilityRole="button"
+									accessibilityState={{ selected: isFilterSelected(option) }}
+								>
+									<Text style={styles.categoryText}>
+										{option.type === 'price'
+											? `Preço ${priceSortDirection === 'ascending' ? '↑' : priceSortDirection === 'descending' ? '↓' : ''}`
+											: option.name}
+									</Text>
 								</TouchableOpacity>
 							))}
 						</ScrollView>
@@ -445,8 +666,9 @@ export default function Home({ navigation }) {
 									cardWidth={productCardWidth}
 									navigation={navigation}
 									favoriteIds={favoriteIds}
+									cartProductIds={cartProductIds}
 									onToggleFavorite={handleToggleFavorite}
-									onAddToBag={handleAddToBag}
+									onToggleCart={handleToggleCart}
 								/>
 							)}
 							{matchingCategories.length === 0 && matchingProducts.length === 0 && (
@@ -455,13 +677,108 @@ export default function Home({ navigation }) {
 						</>
 					) : (
 						<>
-							<ProductSection title="Em Destaque" products={products} cardWidth={productCardWidth} navigation={navigation} favoriteIds={favoriteIds} onToggleFavorite={handleToggleFavorite} onAddToBag={handleAddToBag} />
-							<ProductSection title="Em Promoção" products={products} cardWidth={productCardWidth} navigation={navigation} favoriteIds={favoriteIds} onToggleFavorite={handleToggleFavorite} onAddToBag={handleAddToBag} />
-							<ProductSection title="Produtos" products={products} cardWidth={productCardWidth} navigation={navigation} favoriteIds={favoriteIds} onToggleFavorite={handleToggleFavorite} onAddToBag={handleAddToBag} />
+							{displayedCategoryProducts.length > 0 ? (
+								<>
+									<ProductSection title="Em Destaque" products={displayedCategoryProducts} cardWidth={productCardWidth} navigation={navigation} favoriteIds={favoriteIds} cartProductIds={cartProductIds} onToggleFavorite={handleToggleFavorite} onToggleCart={handleToggleCart} />
+									<ProductSection title="Em Promoção" products={displayedCategoryProducts.filter((product) => product.discount)} cardWidth={productCardWidth} navigation={navigation} favoriteIds={favoriteIds} cartProductIds={cartProductIds} onToggleFavorite={handleToggleFavorite} onToggleCart={handleToggleCart} />
+									<ProductSection title="Produtos" products={displayedCategoryProducts} cardWidth={productCardWidth} navigation={navigation} favoriteIds={favoriteIds} cartProductIds={cartProductIds} onToggleFavorite={handleToggleFavorite} onToggleCart={handleToggleCart} />
+								</>
+							) : (
+								<Text style={styles.noSearchResults}>Ainda não há produtos nesta categoria.</Text>
+							)}
 						</>
 					)}
 				</ScrollView>
 			</View>
+
+			<Modal
+				visible={isFilterModalVisible}
+				transparent
+				animationType="slide"
+				onRequestClose={() => setIsFilterModalVisible(false)}
+			>
+				<View style={styles.filterModalOverlay}>
+					<TouchableOpacity
+						style={styles.filterBackdrop}
+						activeOpacity={1}
+						onPress={() => setIsFilterModalVisible(false)}
+						accessibilityRole="button"
+						accessibilityLabel="Fechar filtros"
+					/>
+					<Animated.View
+						style={[
+							styles.filterSheet,
+							{
+								height: windowHeight * FILTER_SHEET_HEIGHT_RATIO,
+								transform: [{ translateY: filterSheetTranslateY }],
+							},
+						]}
+					>
+						<View
+							style={styles.filterHandleArea}
+							{...filterSheetPanResponder.panHandlers}
+							accessibilityRole="adjustable"
+							accessibilityLabel="Arraste para baixo para fechar os filtros"
+						>
+							<View style={styles.filterHandle} />
+						</View>
+						<View style={styles.filterHeader}>
+							<TouchableOpacity
+								style={styles.filterCloseButton}
+								onPress={() => setIsFilterModalVisible(false)}
+								activeOpacity={0.8}
+								accessibilityRole="button"
+								accessibilityLabel="Fechar filtros"
+							>
+								<Feather name="x" size={16} color={colors.white} />
+							</TouchableOpacity>
+							<Text style={styles.filterTitle}>Filtros</Text>
+							<View style={styles.filterHeaderSpacer} />
+						</View>
+						<FlatList
+							data={filterOptions}
+							numColumns={2}
+							keyExtractor={(item) => item.name}
+							columnWrapperStyle={styles.filterGridRow}
+							contentContainerStyle={styles.filterGrid}
+							showsVerticalScrollIndicator={false}
+							renderItem={({ item }) => (
+								<TouchableOpacity
+									style={[
+										styles.filterOption,
+										isFilterSelected(item) && styles.filterOptionSelected,
+									]}
+									onPress={() => selectFilter(item)}
+									activeOpacity={0.8}
+									accessibilityRole="button"
+									accessibilityState={{ selected: isFilterSelected(item) }}
+									accessibilityLabel={`Filtrar por ${item.name}`}
+								>
+									<MaterialCommunityIcons
+										name={item.type === 'price' && priceSortDirection === 'descending'
+											? 'sort-descending'
+											: item.icon}
+										size={34}
+										color={colors.green}
+									/>
+									<Text style={styles.filterOptionText} numberOfLines={1}>
+										{item.type === 'price'
+											? `Preço ${priceSortDirection === 'ascending' ? '↑' : priceSortDirection === 'descending' ? '↓' : ''}`
+											: item.name}
+									</Text>
+									{isFilterSelected(item) ? (
+										<MaterialCommunityIcons
+											name="check-circle"
+											size={18}
+											color={colors.lightGreen}
+										/>
+									) : null}
+								</TouchableOpacity>
+							)}
+						/>
+					</Animated.View>
+				</View>
+			</Modal>
 
 			<NavegacaoInferior activeTab="Início" navigation={navigation} />
 		</SafeAreaView>
@@ -471,27 +788,32 @@ export default function Home({ navigation }) {
 const styles = StyleSheet.create({
 	safeArea: {
 		flex: 1,
-		backgroundColor: colors.surface,
+		backgroundColor: '#194B38',
 	},
 	contentArea: {
 		flex: 1,
-		paddingTop: 12,
-		backgroundColor: colors.surface,
-		borderTopRightRadius: 30,
-		borderTopLeftRadius: 30,
+		marginTop: -36,
+		paddingTop: 26,
+		backgroundColor: '#F1F3F5',
+		borderTopRightRadius: 28,
+		borderTopLeftRadius: 28,
+		zIndex: 1,
+		elevation: 2,
 	},
 
 	header: {
-		height: 122,
-		backgroundColor: colors.green,
+		height: 140,
+		backgroundColor: '#194B38',
 		flexDirection: 'row',
 		alignItems: 'center',
 		paddingHorizontal: 16,
+		paddingBottom: 30,
+		zIndex: 0,
 	},
 	locationIcon: {
-		width: 60,
-		height: 60,
-		borderRadius: 12,
+		width: 50,
+		height: 50,
+		borderRadius: 16,
 		backgroundColor: '#40B190',
 		alignItems: 'center',
 		justifyContent: 'center',
@@ -502,76 +824,47 @@ const styles = StyleSheet.create({
 	},
 	greeting: {
 		color: colors.white,
-		fontFamily: 'Lalezar_400Regular',
-		fontSize: 21,
-		lineHeight: 26,
+		fontFamily: 'Montserrat_700Bold',
+		fontSize: 19,
+		lineHeight: 24,
 	},
 	address: {
 		color: colors.white,
-		fontFamily: 'Lalezar_400Regular',
-		fontSize: 18,
-		lineHeight: 23,
+		fontFamily: 'Montserrat_700Bold',
+		fontSize: 14,
+		lineHeight: 18,
 	},
-	cep: {
-		color: '#9dc6b7',
-		fontFamily: 'Lalezar_400Regular',
-		fontSize: 16,
-		lineHeight: 21,
-	},
-	cepRow: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		gap: 7,
-	},
-	editCepButton: {
-		width: 20,
-		height: 20,
-		borderRadius: 10,
-		backgroundColor: '#40B190',
-		alignItems: 'center',
-		justifyContent: 'center',
-	},
-	bagButton: {
-		width: 60,
-		height: 60,
-		borderRadius: 9,
-		backgroundColor: '#40B190',
-		alignItems: 'center',
-		justifyContent: 'center',
-	},
-	logoutButton: {
-		height: 40,
-		paddingHorizontal: 12,
-		marginLeft: 10,
-		borderRadius: 9,
-		backgroundColor: '#ffffff',
-		alignItems: 'center',
-		justifyContent: 'center',
-	},
-	logoutText: {
-		color: colors.green,
+	editCep: {
+		color: '#35D59A',
 		fontFamily: 'Montserrat_500Medium',
-		fontSize: 11,
+		fontSize: 12,
+		lineHeight: 16,
 	},
 	modalBackdrop: {
 		flex: 1,
-		backgroundColor: 'rgba(0, 0, 0, 0.45)',
+		backgroundColor: 'rgba(0, 0, 0, 0.48)',
 		alignItems: 'center',
 		justifyContent: 'center',
 		paddingHorizontal: 24,
 	},
 	cepModal: {
 		width: '100%',
-		maxWidth: 360,
-		padding: 20,
-		borderRadius: 18,
+		maxWidth: 380,
+		padding: 22,
+		borderRadius: 20,
 		backgroundColor: colors.white,
 	},
 	cepModalTitle: {
 		color: colors.ink,
-		fontFamily: 'LilitaOne_400Regular',
-		fontSize: 22,
-		marginBottom: 14,
+		fontFamily: 'Montserrat_700Bold',
+		fontSize: 20,
+	},
+	cepModalDescription: {
+		color: colors.muted,
+		fontFamily: 'Montserrat_400Regular',
+		fontSize: 13,
+		marginTop: 6,
+		marginBottom: 16,
 	},
 	cepInput: {
 		height: 48,
@@ -583,15 +876,26 @@ const styles = StyleSheet.create({
 		fontFamily: 'Montserrat_500Medium',
 		fontSize: 16,
 	},
+	addressInput: {
+		height: 88,
+		paddingTop: 12,
+		marginBottom: 14,
+	},
+	cepFieldLabel: {
+		color: colors.ink,
+		fontFamily: 'Montserrat_700Bold',
+		fontSize: 12,
+		marginBottom: 6,
+	},
 	cepModalActions: {
 		flexDirection: 'row',
 		justifyContent: 'flex-end',
 		gap: 10,
-		marginTop: 16,
+		marginTop: 18,
 	},
 	cepModalButton: {
-		minWidth: 90,
-		height: 40,
+		minWidth: 96,
+		height: 42,
 		paddingHorizontal: 14,
 		borderRadius: 10,
 		alignItems: 'center',
@@ -613,26 +917,9 @@ const styles = StyleSheet.create({
 		fontFamily: 'Montserrat_700Bold',
 		fontSize: 13,
 	},
-	badge: {
-		position: 'absolute',
-		right: -6,
-		top: -6,
-		backgroundColor: '#ff3f44',
-		borderRadius: 12,
-		minWidth: 24,
-		height: 24,
-		paddingHorizontal: 6,
-		alignItems: 'center',
-		justifyContent: 'center',
-	},
-	badgeText: {
-		color: colors.white,
-		fontFamily: 'Montserrat_500Medium',
-		fontSize: 11,
-	},
 
 	searchBox: {
-		height: 34,
+		height: 43,
 		marginHorizontal: 18,
 		borderRadius: 20,
 		backgroundColor: '#dfe2e2',
@@ -680,12 +967,97 @@ const styles = StyleSheet.create({
 		alignItems: 'center',
 		justifyContent: 'center',
 	},
+	filterModalOverlay: {
+		flex: 1,
+		justifyContent: 'flex-end',
+		backgroundColor: 'rgba(0, 0, 0, 0.5)',
+	},
+	filterBackdrop: {
+		...StyleSheet.absoluteFillObject,
+	},
+	filterSheet: {
+		width: '100%',
+		paddingTop: 10,
+		paddingHorizontal: 16,
+		paddingBottom: 10,
+		borderTopLeftRadius: 24,
+		borderTopRightRadius: 24,
+		backgroundColor: '#F1F3F5',
+	},
+	filterHandle: {
+		width: 44,
+		height: 5,
+		borderRadius: 3,
+		backgroundColor: '#7A8581',
+	},
+	filterHandleArea: {
+		height: 22,
+		alignItems: 'center',
+		justifyContent: 'flex-start',
+		marginBottom: 2,
+	},
+	filterHeader: {
+		minHeight: 42,
+		flexDirection: 'row',
+		alignItems: 'center',
+		justifyContent: 'space-between',
+		marginBottom: 12,
+	},
+	filterCloseButton: {
+		width: 34,
+		height: 34,
+		borderRadius: 17,
+		alignItems: 'center',
+		justifyContent: 'center',
+		backgroundColor: colors.red,
+	},
+	filterHeaderSpacer: {
+		width: 34,
+		height: 34,
+	},
+	filterTitle: {
+		color: colors.ink,
+		fontFamily: 'LilitaOne_400Regular',
+		fontSize: 22,
+	},
+	filterGrid: {
+		paddingBottom: 8,
+	},
+	filterGridRow: {
+		gap: 10,
+		marginBottom: 10,
+	},
+	filterOption: {
+		flex: 1,
+		minHeight: 78,
+		paddingHorizontal: 12,
+		paddingVertical: 10,
+		borderRadius: 14,
+		backgroundColor: colors.white,
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: 10,
+	},
+	filterOptionSelected: {
+		borderWidth: 1.5,
+		borderColor: colors.lightGreen,
+		backgroundColor: '#FFFFFF',
+	},
+	filterOptionText: {
+		flex: 1,
+		color: colors.ink,
+		fontFamily: 'Montserrat_700Bold',
+		fontSize: 13,
+	},
 	category: {
 		backgroundColor: colors.green,
 		paddingHorizontal: 12,
 		height: 36,
 		justifyContent: 'center',
 		borderRadius: 20,
+	},
+	selectedCategory: {
+		backgroundColor: '#40B190',
 	},
 	categoryText: {
 		color: colors.white,
@@ -742,7 +1114,7 @@ const styles = StyleSheet.create({
 		width: 145,
 		minHeight: 180,
 		padding: 7,
-		backgroundColor: colors.white,
+		backgroundColor: '#FFFFFF',
 		borderRadius: 25,
 	},
 	productMain: {
@@ -750,7 +1122,7 @@ const styles = StyleSheet.create({
 	},
 	productImage: {
 		height: 61,
-		backgroundColor: '#f7f7f7',
+		backgroundColor: '#FFFFFF',
 		borderRadius: 7,
 		alignItems: 'center',
 		justifyContent: 'center',
@@ -772,7 +1144,7 @@ const styles = StyleSheet.create({
 		justifyContent: 'center',
 	},
 	heartButtonActive: {
-		backgroundColor: '#ffe9e9',
+		backgroundColor: colors.red,
 	},
 	discount: {
 		position: 'absolute',
@@ -802,13 +1174,32 @@ const styles = StyleSheet.create({
 		fontSize: 12,
 		marginTop: 1,
 	},
+	priceRow: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: 4,
+	},
+	originalPrice: {
+		color: '#9aa39f',
+		fontFamily: 'Montserrat_400Regular',
+		textDecorationLine: 'line-through',
+		marginTop: 1,
+	},
 	addButton: {
 		height: 15,
 		borderRadius: 8,
 		backgroundColor: colors.green,
+		flexDirection: 'row',
+		borderWidth: 1,
+		borderColor: 'transparent',
 		alignItems: 'center',
 		justifyContent: 'center',
+		gap: 3,
 		marginTop: 4,
+	},
+	addedButton: {
+		backgroundColor: colors.lightGreen,
+		borderColor: '#2E9BFF',
 	},
 	addButtonText: {
 		color: colors.white,

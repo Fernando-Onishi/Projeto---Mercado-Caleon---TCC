@@ -20,6 +20,8 @@ import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { updateEmail, updatePassword, updateProfile } from 'firebase/auth';
 import { auth } from '../Config/FireBaseConfig';
+import { getProfileStorageKey } from '../Config/PerfilStorage';
+import BotaoSacola from '../Componentes/BotaoSacola';
 import NavegacaoInferior from '../Componentes/NavegacaoInferior';
 
 const COLORS = {
@@ -68,10 +70,6 @@ function formatPhone(value) {
 	return `${area}${number.slice(0, 4)}-${number.slice(4)}`;
 }
 
-function storageKey(uid) {
-	return `caleon-profile-${uid || 'anonymous'}`;
-}
-
 export default function Perfil({ navigation }) {
 	const { width } = useWindowDimensions();
 	const avatarSize = Math.min(250, width * 0.62);
@@ -89,7 +87,7 @@ export default function Perfil({ navigation }) {
 			const user = auth.currentUser;
 			let stored = {};
 			try {
-				stored = JSON.parse(await AsyncStorage.getItem(storageKey(user?.uid)) || '{}');
+				stored = JSON.parse(await AsyncStorage.getItem(getProfileStorageKey(user?.uid)) || '{}');
 			} catch {
 				stored = {};
 			}
@@ -166,7 +164,7 @@ export default function Perfil({ navigation }) {
 			if (user && profile.password) await updatePassword(user, profile.password);
 
 			const saved = { ...profile, email, name: profile.name.trim(), password: '' };
-			await AsyncStorage.setItem(storageKey(user?.uid), JSON.stringify({
+			await AsyncStorage.setItem(getProfileStorageKey(user?.uid), JSON.stringify({
 				name: saved.name,
 				email: saved.email,
 				cep: saved.cep,
@@ -208,15 +206,7 @@ export default function Perfil({ navigation }) {
 							<TouchableOpacity style={styles.backButton} onPress={goBack} accessibilityRole="button" accessibilityLabel="Voltar">
 								<Feather name="chevron-left" size={27} color={COLORS.white} />
 							</TouchableOpacity>
-							<TouchableOpacity
-								style={styles.bagButton}
-								onPress={() => navigation?.navigate('TelaSacola')}
-								accessibilityRole="button"
-								accessibilityLabel="Abrir sacola"
-							>
-								<Feather name="shopping-bag" size={22} color={COLORS.white} />
-								<View style={styles.badge}><Text style={styles.badgeText}>1</Text></View>
-							</TouchableOpacity>
+							<BotaoSacola navigation={navigation} />
 						</View>
 						<Text style={styles.title}>Perfil</Text>
 						<Text style={styles.subtitle}>Editar</Text>
@@ -247,7 +237,7 @@ export default function Perfil({ navigation }) {
 								<View key={field.key} style={styles.field}>
 									<Text style={styles.label}>{field.label}</Text>
 									<View style={styles.inputWrap}>
-										<Feather name={field.icon} size={23} color={COLORS.muted} />
+										<Feather name={field.icon} size={25} color={COLORS.muted} />
 										<TextInput
 											style={styles.input}
 											value={profile[field.key]}
@@ -302,34 +292,13 @@ const styles = StyleSheet.create({
 		justifyContent: 'space-between',
 	},
 	backButton: {
-		width: 42,
-		height: 42,
-		borderRadius: 21,
-		backgroundColor: COLORS.mint,
-		alignItems: 'center',
-		justifyContent: 'center',
-	},
-	bagButton: {
-		width: 42,
-		height: 42,
+		width: 40,
+		height: 40,
 		borderRadius: 12,
 		backgroundColor: COLORS.mint,
 		alignItems: 'center',
 		justifyContent: 'center',
 	},
-	badge: {
-		position: 'absolute',
-		top: -4,
-		right: -5,
-		minWidth: 17,
-		height: 17,
-		paddingHorizontal: 3,
-		borderRadius: 9,
-		backgroundColor: COLORS.cancel,
-		alignItems: 'center',
-		justifyContent: 'center',
-	},
-	badgeText: { color: COLORS.white, fontFamily: 'LilitaOne_400Regular', fontSize: 10, lineHeight: 13 },
 	title: { color: COLORS.black, fontFamily: 'LilitaOne_400Regular', fontSize: 30, marginTop: 5 },
 	subtitle: { color: '#226842', fontFamily: 'LilitaOne_400Regular', fontSize: 22, marginTop: -2 },
 	content: { flex: 1 },

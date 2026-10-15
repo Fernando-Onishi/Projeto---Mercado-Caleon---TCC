@@ -1,27 +1,28 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import { useFonts } from 'expo-font';
 import {
-  View,
-  Text,
-  StyleSheet,
-  Image,
-  TouchableOpacity,
-  ScrollView,
-  SafeAreaView,
-  StatusBar,
   Animated,
-  PanResponder,
   Dimensions,
-  Platform,
-  UIManager,
+  Image,
   LayoutAnimation,
+  PanResponder,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  UIManager,
+  View,
 } from 'react-native';
-import { Ionicons, Feather } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Feather, Ionicons } from '@expo/vector-icons';
+
 import NavegacaoInferior from '../Componentes/NavegacaoInferior';
 import { publishSacolaCount } from '../Componentes/useSacolaCount';
+import { PRODUCTS } from '../Config/Produtos';
 
-// Habilita LayoutAnimation no Android
 if (
   Platform.OS === 'android' &&
   UIManager.setLayoutAnimationEnabledExperimental
@@ -30,7 +31,7 @@ if (
 }
 
 const SACOLA_KEY = '@sacola_itens';
-const DELETE_WIDTH = 65;
+const DELETE_WIDTH = 80;
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
 const itensIniciais = [
@@ -91,18 +92,16 @@ function SwipeableCard({ children, onDelete }) {
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (_, gs) =>
-        Math.abs(gs.dx) > 15 && Math.abs(gs.dy) < 10,
-      onPanResponderMove: (_, gs) => {
+      onMoveShouldSetPanResponder: (_, gestureState) =>
+        Math.abs(gestureState.dx) > 15 && Math.abs(gestureState.dy) < 10,
+      onPanResponderMove: (_, gestureState) => {
         const base = isOpen.current ? -DELETE_WIDTH : 0;
-        const newX = base + gs.dx;
-        translateX.setValue(
-          Math.max(Math.min(newX, 0), -DELETE_WIDTH - 10)
-        );
+        const nextX = base + gestureState.dx;
+        translateX.setValue(Math.max(Math.min(nextX, 0), -DELETE_WIDTH));
       },
-      onPanResponderRelease: (_, gs) => {
+      onPanResponderRelease: (_, gestureState) => {
         const base = isOpen.current ? -DELETE_WIDTH : 0;
-        const finalX = base + gs.dx;
+        const finalX = base + gestureState.dx;
 
         if (finalX < -DELETE_WIDTH / 2) {
           Animated.spring(translateX, {
@@ -136,21 +135,33 @@ function SwipeableCard({ children, onDelete }) {
     });
   };
 
+  const deleteOpacity = translateX.interpolate({
+    inputRange: [-DELETE_WIDTH, 0],
+    outputRange: [1, 0],
+    extrapolate: 'clamp',
+  });
+
   return (
-    <View style={styles.swipeContainer}>
-      <TouchableOpacity
-        style={styles.deleteBtnBg}
-        onPress={handleDelete}
-        activeOpacity={0.7}
-      >
-        <Ionicons name="trash" size={24} color="#fff" />
-      </TouchableOpacity>
-      <Animated.View
-        style={{ transform: [{ translateX }] }}
-        {...panResponder.panHandlers}
-      >
-        {children}
-      </Animated.View>
+    <View style={styles.swipeShadow}>
+      <View style={styles.swipeContainer}>
+        <Animated.View style={[styles.deleteBtnBg, { opacity: deleteOpacity }]}>
+          <TouchableOpacity
+            style={styles.deleteBtnAction}
+            onPress={handleDelete}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Excluir produto da sacola"
+          >
+            <Feather name="trash-2" size={40} color="#fff" />
+          </TouchableOpacity>
+        </Animated.View>
+        <Animated.View
+          style={{ width: '100%', zIndex: 1, transform: [{ translateX }] }}
+          {...panResponder.panHandlers}
+        >
+          {children}
+        </Animated.View>
+      </View>
     </View>
   );
 }
@@ -160,15 +171,8 @@ export default function TelaSacola({ navigation }) {
   const [carregado, setCarregado] = useState(false);
   const [fontsLoaded] = useFonts({
     LuckiestGuy: require('@expo-google-fonts/luckiest-guy/400Regular/LuckiestGuy_400Regular.ttf'),
+    LilitaOne_400Regular: require('@expo-google-fonts/lilita-one/400Regular/LilitaOne_400Regular.ttf'),
   });
-
-  useEffect(() => {
-    carregarSacola();
-    const unsubscribe = navigation?.addListener?.('focus', () => {
-      carregarSacola();
-    });
-    return typeof unsubscribe === 'function' ? unsubscribe : undefined;
-  }, [navigation]);
 
   const carregarSacola = async () => {
     try {
@@ -184,9 +188,18 @@ export default function TelaSacola({ navigation }) {
       }
     } catch (error) {
       console.error('Erro ao carregar sacola:', error);
+    } finally {
+      setCarregado(true);
     }
-    setCarregado(true);
   };
+
+  useEffect(() => {
+    carregarSacola();
+    const unsubscribe = navigation?.addListener?.('focus', () => {
+      carregarSacola();
+    });
+    return typeof unsubscribe === 'function' ? unsubscribe : undefined;
+  }, [navigation]);
 
   const salvarSacola = async (novosItens) => {
     try {
@@ -233,8 +246,18 @@ export default function TelaSacola({ navigation }) {
     });
   };
 
+  const abrirDetalhes = (item) => {
+    const productId =
+      item.productId ||
+      PRODUCTS.find((product) => product.name === item.nome)?.id;
+
+    if (productId) {
+      navigation?.navigate?.('TelaDetalheProduto', { productId });
+    }
+  };
+
   const subtotal = itens.reduce(
-    (acc, item) => acc + (item.preco || 0) * (item.quantidade || 1),
+    (acc, item) => acc + (Number(item.preco) || 0) * (Number(item.quantidade) || 1),
     0
   );
   const taxaServico = 5.0;
@@ -243,7 +266,6 @@ export default function TelaSacola({ navigation }) {
   const renderItem = (item) => (
     <SwipeableCard key={item.id} onDelete={() => removerItem(item.id)}>
       <View style={styles.card}>
-        {/* Usando operador ternário para evitar crash de renderização */}
         {item.desconto ? (
           <View style={styles.descontoBadge}>
             <Text style={styles.descontoText}>{item.desconto}</Text>
@@ -280,9 +302,7 @@ export default function TelaSacola({ navigation }) {
                 </Text>
               ) : null}
             </View>
-            {item.peso ? (
-              <Text style={styles.produtoPeso}>{item.peso}</Text>
-            ) : null}
+            {item.peso ? <Text style={styles.produtoPeso}>{item.peso}</Text> : null}
           </View>
 
           <View style={styles.cardActions}>
@@ -294,7 +314,12 @@ export default function TelaSacola({ navigation }) {
                 <Ionicons name="heart" size={22} color="#fff" />
               </TouchableOpacity>
             ) : (
-              <TouchableOpacity style={styles.actionBtn}>
+              <TouchableOpacity
+                style={styles.actionBtn}
+                onPress={() => abrirDetalhes(item)}
+                accessibilityRole="button"
+                accessibilityLabel={`Ver detalhes de ${item.nome}`}
+              >
                 <Ionicons name="chevron-forward" size={22} color="#fff" />
               </TouchableOpacity>
             )}
@@ -324,120 +349,169 @@ export default function TelaSacola({ navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar backgroundColor="#1B4B3D" barStyle="light-content" />
+      <View style={styles.topBand} />
 
-      <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => navigation?.goBack?.()}
-          style={styles.voltarBtn}
-        >
-          <Ionicons name="chevron-back" size={26} color="#fff" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitulo}>Sacola</Text>
-        <View style={{ width: 26 }} />
-      </View>
+      <View style={styles.screenPanel}>
+        <View style={styles.header}>
+          <TouchableOpacity
+            onPress={() => navigation?.goBack?.()}
+            style={styles.backButton}
+            accessibilityRole="button"
+            accessibilityLabel="Voltar"
+          >
+            <Feather name="chevron-left" size={27} color="#fff" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitulo}>Sacola</Text>
+        </View>
 
-      <ScrollView
-        style={styles.lista}
-        contentContainerStyle={{ paddingBottom: 20 }}
-      >
-        {itens.map(renderItem)}
+        <View style={styles.painel}>
+          <ScrollView
+            style={styles.lista}
+            contentContainerStyle={styles.listaContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {itens.map(renderItem)}
 
-        {itens.length === 0 && carregado ? (
-          <View style={styles.sacolaVazia}>
-            <Ionicons name="bag-outline" size={60} color="#ccc" />
-            <Text style={styles.sacolaVaziaTexto}>
-              Sua sacola está vazia
-            </Text>
-          </View>
-        ) : null}
-
-        {itens.length > 0 ? (
-          <>
-            <View style={styles.resumo}>
-              <View style={styles.resumoRow}>
-                <Text style={styles.resumoLabel}>SubTotal:</Text>
-                <Text style={styles.resumoValor}>
-                  R$ {subtotal.toFixed(2).replace('.', ',')}
-                </Text>
+            {itens.length === 0 && carregado ? (
+              <View style={styles.sacolaVazia}>
+                <Ionicons name="bag-outline" size={60} color="#ccc" />
+                <Text style={styles.sacolaVaziaTexto}>Sua sacola está vazia</Text>
               </View>
-              <View style={styles.resumoRow}>
-                <Text style={styles.resumoLabel}>Taxa de Serviço:</Text>
-                <Text style={styles.resumoValor}>
-                  R$ {taxaServico.toFixed(2).replace('.', ',')}
-                </Text>
+            ) : null}
+          </ScrollView>
+
+          {itens.length > 0 && (
+            <View style={styles.checkoutSection}>
+              <View style={styles.resumo}>
+                <View style={styles.resumoRow}>
+                  <Text style={styles.resumoLabel}>SubTotal:</Text>
+                  <Text style={styles.resumoValor}>
+                    R$ {subtotal.toFixed(2).replace('.', ',')}
+                  </Text>
+                </View>
+                <View style={styles.resumoRow}>
+                  <Text style={styles.resumoLabel}>Taxa de Serviço:</Text>
+                  <Text style={styles.resumoValor}>
+                    R$ {taxaServico.toFixed(2).replace('.', ',')}
+                  </Text>
+                </View>
+                <View style={[styles.resumoRow, { marginTop: 8 }]}>
+                  <Text style={styles.totalLabel}>Total:</Text>
+                  <Text style={styles.totalValor}>
+                    R$ {total.toFixed(2).replace('.', ',')}
+                  </Text>
+                </View>
               </View>
-              <View style={[styles.resumoRow, { marginTop: 8 }]}>
-                <Text style={styles.totalLabel}>Total:</Text>
-                <Text style={styles.totalValor}>
-                  R$ {total.toFixed(2).replace('.', ',')}
-                </Text>
-              </View>
+
+              <TouchableOpacity style={styles.finalizarBtn}>
+                <Text style={styles.finalizarText}>Finalizar Compra</Text>
+              </TouchableOpacity>
             </View>
+          )}
+        </View>
 
-            <TouchableOpacity style={styles.finalizarBtn}>
-              <Text style={styles.finalizarText}>Finalizar Compra</Text>
-            </TouchableOpacity>
-          </>
-        ) : null}
-      </ScrollView>
-
-      <NavegacaoInferior activeTab="Sacola" navigation={navigation} />
+        <NavegacaoInferior activeTab="Sacola" navigation={navigation} />
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f3f5f4' },
-  header: {
-    backgroundColor: '#1a8e5f',
-    paddingTop: 44,
-    paddingBottom: 18,
-    paddingHorizontal: 18,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderBottomLeftRadius: 26,
-    borderBottomRightRadius: 26,
+  container: { flex: 1, backgroundColor: '#1B4B3D' },
+  topBand: { height: 40, backgroundColor: '#1B4B3D' },
+  screenPanel: {
+    flex: 1,
+    marginTop: -1,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    backgroundColor: '#F1F3F5',
+    overflow: 'hidden',
   },
-  voltarBtn: { padding: 4 },
+  header: {
+    height: 116,
+    alignItems: 'center',
+    paddingTop: 15,
+  },
+  backButton: {
+    position: 'absolute',
+    top: 15,
+    left: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#40B190',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   headerTitulo: {
-    color: '#fff',
-    fontSize: 26,
-    fontFamily: 'LuckiestGuy',
-    letterSpacing: 0.5,
+    color: '#000000',
+    fontSize: 30,
+    fontFamily: 'LilitaOne_400Regular',
+    marginTop: 14,
+  },
+  painel: {
+    flex: 1,
+    backgroundColor: '#F1F3F5',
+    overflow: 'hidden',
   },
   lista: {
     flex: 1,
-    paddingHorizontal: 14,
-    marginTop: 12,
-    backgroundColor: '#ffffff',
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
-    paddingTop: 12,
   },
-  swipeContainer: { marginBottom: 12, overflow: 'hidden', borderRadius: 18 },
+  listaContent: {
+    flexGrow: 1,
+    paddingHorizontal: 13,
+    paddingTop: 10,
+    paddingBottom: 20,
+  },
+  checkoutSection: {
+    paddingHorizontal: 14,
+    paddingTop: 8,
+    backgroundColor: '#F1F3F5',
+  },
+  swipeShadow: {
+    width: '100%',
+    alignSelf: 'stretch',
+    marginBottom: 12,
+    borderRadius: 13,
+    backgroundColor: '#ffffff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  swipeContainer: {
+    width: '100%',
+    alignSelf: 'stretch',
+    overflow: 'hidden',
+    borderRadius: 13,
+  },
   deleteBtnBg: {
     position: 'absolute',
     right: 0,
     top: 0,
     bottom: 0,
-    width: 68,
-    backgroundColor: '#f05d5d',
-    borderTopRightRadius: 18,
-    borderBottomRightRadius: 18,
-    justifyContent: 'center',
+    width: 80,
+    backgroundColor: '#ff2929',
+    zIndex: 0,
     alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteBtnAction: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   card: {
+    width: '100%',
     backgroundColor: '#fff',
     borderRadius: 18,
     padding: 12,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
     position: 'relative',
     borderWidth: 1,
     borderColor: '#edf0ee',
@@ -542,12 +616,17 @@ const styles = StyleSheet.create({
     fontFamily: 'LuckiestGuy',
     marginHorizontal: 6,
   },
-  sacolaVazia: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
+  sacolaVazia: {
+    alignItems: 'center',
+    paddingTop: 38,
+  },
   sacolaVaziaTexto: {
-    fontSize: 18,
-    color: '#808b87',
+    fontSize: 17,
+    color: '#87918D',
     marginTop: 12,
-    fontFamily: 'LuckiestGuy',
+    fontFamily: 'LilitaOne_400Regular',
+    textTransform: 'uppercase',
+    textAlign: 'center',
   },
   resumo: {
     marginTop: 10,
