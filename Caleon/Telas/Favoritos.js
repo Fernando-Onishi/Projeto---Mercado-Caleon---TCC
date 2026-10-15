@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+	Alert,
 	Animated,
 	Image,
 	PanResponder,
+	ScrollView,
 	SafeAreaView,
 	StatusBar,
 	StyleSheet,
@@ -15,14 +17,14 @@ import { useFonts } from 'expo-font';
 import Feather from '@expo/vector-icons/Feather';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import NavegacaoInferior from '../Componentes/NavegacaoInferior';
-import { formatCurrency, getProductPrice, PRODUCTS } from '../Config/Produtos';
+import { formatCurrency, PRODUCTS } from '../Config/Produtos';
 import { getFavorites, toggleFavorite } from '../Config/ProdutoStorage';
 
 const palette = {
 	green: '#1b4b3d',
 	mint: '#40b190',
 	price: '#00a878',
-	background: '#f1f2f3',
+	background: '#F1F3F5',
 	muted: '#757575',
 	white: '#ffffff',
 	red: '#ff2929',
@@ -124,40 +126,46 @@ export default function Favoritos({ navigation }) {
 	return (
 		<SafeAreaView style={styles.safeArea}>
 			<StatusBar backgroundColor={palette.green} barStyle="light-content" />
-			<View style={styles.header}>
-				<View style={styles.headerActions}>
+			<View style={styles.topBand} />
+			<View style={styles.screenPanel}>
+				<View style={styles.header}>
 					<TouchableOpacity
 						style={styles.roundButton}
 						onPress={() => navigation.navigate('TelaHome')}
 						accessibilityRole="button"
 						accessibilityLabel="Voltar"
 					>
-						<Feather name="chevron-left" size={28} color={palette.white} />
+						<Feather name="chevron-left" size={27} color={palette.white} />
 					</TouchableOpacity>
-					<TouchableOpacity style={styles.cartButton} accessibilityRole="button" accessibilityLabel="Sacola, 1 item">
-						<MaterialCommunityIcons name="shopping-bag-outline" size={28} color={palette.white} />
-						<View style={styles.headerBadge}><Text style={styles.badgeText}>1</Text></View>
-					</TouchableOpacity>
+					<Text style={styles.title}>Favoritos</Text>
 				</View>
-				<Text style={styles.title}>Favoritos</Text>
-			</View>
 
-			<View style={styles.list}>
-				{favorites.length === 0 && <Text style={styles.emptyFavorites}>Você ainda não favoritou produtos.</Text>}
-				{favorites.map((item) => (
-					<FavoriteRow
-						key={item.id}
-						item={item}
-						width={width - 26}
-						isOpen={openId === item.id}
-						onOpen={setOpenId}
-						onDelete={removeFavorite}
-						onPress={() => navigation.navigate('TelaDetalheProduto', { productId: item.id })}
-					/>
-				))}
+				<ScrollView
+					style={styles.list}
+					contentContainerStyle={styles.listContent}
+					showsVerticalScrollIndicator={false}
+				>
+					{favorites.length === 0 ? (
+						<View style={styles.emptyFavorites}>
+							<MaterialCommunityIcons name="heart-outline" size={60} color="#C9C9C9" />
+							<Text style={styles.emptyFavoritesText}>Sua lista de favoritos está vazia</Text>
+						</View>
+					) : (
+						favorites.map((item) => (
+							<FavoriteRow
+								key={item.id}
+								item={item}
+								width={width - 26}
+								isOpen={openId === item.id}
+								onOpen={setOpenId}
+								onDelete={removeFavorite}
+								onPress={() => navigation.navigate('TelaDetalheProduto', { productId: item.id })}
+							/>
+						))
+					)}
+				</ScrollView>
+				<NavegacaoInferior activeTab="Favoritos" navigation={navigation} />
 			</View>
-
-			<NavegacaoInferior activeTab="Favoritos" navigation={navigation} />
 		</SafeAreaView>
 	);
 }
@@ -165,70 +173,64 @@ export default function Favoritos({ navigation }) {
 const styles = StyleSheet.create({
 	safeArea: {
 		flex: 1,
+		backgroundColor: palette.green,
+	},
+	topBand: {
+		height: 40,
+		backgroundColor: palette.green,
+	},
+	screenPanel: {
+		flex: 1,
+		marginTop: -1,
+		borderTopLeftRadius: 28,
+		borderTopRightRadius: 28,
 		backgroundColor: palette.background,
+		overflow: 'hidden',
 	},
 	header: {
-		height: 134,
-		paddingTop: 40,
-		paddingHorizontal: 7,
-		backgroundColor: palette.background,
-	},
-	headerActions: {
-		flexDirection: 'row',
+		height: 116,
 		alignItems: 'center',
-		justifyContent: 'space-between',
+		paddingTop: 15,
 	},
 	roundButton: {
-		width: 24,
-		height: 24,
+		position: 'absolute',
+		top: 15,
+		left: 16,
+		width: 40,
+		height: 40,
 		borderRadius: 12,
 		backgroundColor: palette.mint,
 		alignItems: 'center',
 		justifyContent: 'center',
 	},
-	cartButton: {
-		width: 30,
-		height: 30,
-		borderRadius: 8,
-		backgroundColor: palette.mint,
-		alignItems: 'center',
-		justifyContent: 'center',
-	},
-	headerBadge: {
-		position: 'absolute',
-		right: -4,
-		top: -4,
-		width: 13,
-		height: 13,
-		borderRadius: 7,
-		backgroundColor: palette.red,
-		alignItems: 'center',
-		justifyContent: 'center',
-	},
-	badgeText: {
-		color: palette.white,
-		fontFamily: 'Montserrat_700Bold',
-		fontSize: 8,
-	},
 	title: {
-		marginTop: 9,
-		color: '#050505',
+		marginTop: 14,
+		color: '#000000',
 		fontFamily: 'LilitaOne_400Regular',
-		fontSize: 22,
+		fontSize: 30,
 		textAlign: 'center',
 	},
 	list: {
 		flex: 1,
+	},
+	listContent: {
+		flexGrow: 1,
 		paddingHorizontal: 13,
-		paddingTop: 0,
-		gap: 10,
+		paddingTop: 10,
+		paddingBottom: 20,
+		gap: 12,
 	},
 	emptyFavorites: {
-		marginTop: 28,
-		color: palette.muted,
-		fontFamily: 'Montserrat_400Regular',
-		fontSize: 14,
+		alignItems: 'center',
+		paddingTop: 38,
+	},
+	emptyFavoritesText: {
+		marginTop: 12,
+		color: '#87918D',
+		fontFamily: 'LilitaOne_400Regular',
+		fontSize: 17,
 		textAlign: 'center',
+		textTransform: 'uppercase',
 	},
 	rowClip: {
 		height: 85,

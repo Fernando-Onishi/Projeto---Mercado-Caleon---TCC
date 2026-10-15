@@ -10,8 +10,8 @@ import useSacolaCount from './useSacolaCount';
 const tabs = [
   { label: 'Início', icon: 'home', route: 'TelaHome' },
   { label: 'Favoritos', icon: 'heart', route: 'TelaFavorito' },
-  { label: 'Sacola', icon: 'shopping-outline', route: 'TelaSacola' },
-  { label: 'Catálogo', icon: 'clipboard-list-outline', route: 'TelaProdutos' },
+  { label: 'Sacola', icon: 'shopping-outline', activeIcon: 'shopping', route: 'TelaSacola' },
+  { label: 'Catálogo', icon: 'clipboard-list-outline', activeIcon: 'clipboard-list', route: 'TelaProdutos' },
   { label: 'Perfil', icon: 'account-outline', activeIcon: 'account', route: 'TelaPerfil' },
 ];
 
@@ -25,7 +25,7 @@ export default function NavegacaoInferior({ activeTab, navigation, onUnavailable
   function handlePress(tab) {
     if (tab.route) {
       if (tab.label !== activeTab) {
-        if (tab.label === 'Perfil') {
+        if (tab.label === 'Início' || tab.label === 'Perfil') {
           navigation.dispatch(StackActions.popTo(tab.route));
         } else {
           navigation.navigate(tab.route);
@@ -94,7 +94,7 @@ export default function NavegacaoInferior({ activeTab, navigation, onUnavailable
 
 const styles = StyleSheet.create({
   tabBar: {
-    height: 88,
+    height: 92,
     borderTopWidth: 1,
     borderTopColor: '#dfe3e6',
     backgroundColor: '#f2f3f4',
@@ -107,7 +107,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: 8,
+    paddingTop: 4,
   },
   tabIcon: {
     width: 46,
@@ -118,7 +118,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   activeTabIcon: {
-    backgroundColor: '#0a7d67',
+    backgroundColor: '#076653',
   },
   tabBadge: {
     position: 'absolute',
@@ -144,6 +144,6 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   activeTabLabel: {
-    color: '#0a7d67',
+    color: '#076653',
   },
 });

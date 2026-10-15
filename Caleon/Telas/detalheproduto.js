@@ -14,7 +14,8 @@ import { useFonts } from 'expo-font';
 import Feather from '@expo/vector-icons/Feather';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import NavegacaoInferior from '../Componentes/NavegacaoInferior';
-import useSacolaCount, { publishSacolaCount } from '../Componentes/useSacolaCount';
+import { publishSacolaCount } from '../Componentes/useSacolaCount';
+import BotaoSacola from '../Componentes/BotaoSacola';
 import { formatCurrency, formatWeight, getProductById, getProductPrice, PRODUCTS } from '../Config/Produtos';
 import { addProductToCart, getFavorites, toggleFavorite } from '../Config/ProdutoStorage';
 
@@ -92,7 +93,6 @@ function SimilarProductCard({ product, onPress, onFavorite, onAdd, isFavorite })
 
 export default function DetalheProduto({ navigation, route }) {
 	const product = getProductById(route?.params?.productId) || PRODUCTS[0];
-	const bagCount = useSacolaCount();
 	const [fontsLoaded] = useFonts({
 		LilitaOne_400Regular: require('@expo-google-fonts/lilita-one/400Regular/LilitaOne_400Regular.ttf'),
 		Montserrat_400Regular: require('@expo-google-fonts/montserrat/400Regular/Montserrat_400Regular.ttf'),
@@ -175,15 +175,7 @@ export default function DetalheProduto({ navigation, route }) {
 					<TouchableOpacity style={styles.roundButton} onPress={goBack} accessibilityRole="button" accessibilityLabel="Voltar">
 						<Feather name="chevron-left" size={27} color={COLORS.white} />
 					</TouchableOpacity>
-					<TouchableOpacity
-						style={styles.bagButton}
-						onPress={() => navigation.navigate('TelaSacola')}
-						accessibilityRole="button"
-						accessibilityLabel="Abrir sacola"
-					>
-						<Feather name="shopping-bag" size={22} color={COLORS.white} />
-						{bagCount > 0 && <View style={styles.headerBadge}><Text style={styles.headerBadgeText}>{bagCount > 99 ? '99+' : bagCount}</Text></View>}
-					</TouchableOpacity>
+					<BotaoSacola navigation={navigation} />
 				</View>
 
 				<ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -276,7 +268,7 @@ export default function DetalheProduto({ navigation, route }) {
 						<Text style={styles.totalValue}>{formatCurrency(total)}</Text>
 					</View>
 					<TouchableOpacity style={styles.addButton} onPress={() => handleAdd()} accessibilityRole="button">
-						<Feather name="shopping-bag" size={22} color={COLORS.white} />
+						<MaterialCommunityIcons name="shopping-outline" size={22} color={COLORS.white} />
 						<Text style={styles.addButtonText}>Adicionar</Text>
 					</TouchableOpacity>
 				</View>
@@ -294,7 +286,7 @@ const styles = StyleSheet.create({
 		marginTop: -1,
 		borderTopLeftRadius: 28,
 		borderTopRightRadius: 28,
-		backgroundColor: COLORS.white,
+		backgroundColor: COLORS.background,
 		overflow: 'hidden',
 	},
 	header: {
@@ -305,10 +297,7 @@ const styles = StyleSheet.create({
 		justifyContent: 'space-between',
 		backgroundColor: COLORS.white,
 	},
-	roundButton: { width: 34, height: 34, borderRadius: 17, backgroundColor: COLORS.mint, alignItems: 'center', justifyContent: 'center' },
-	bagButton: { width: 40, height: 38, borderRadius: 10, backgroundColor: COLORS.mint, alignItems: 'center', justifyContent: 'center' },
-	headerBadge: { position: 'absolute', top: -5, right: -5, minWidth: 16, height: 16, borderRadius: 8, paddingHorizontal: 3, backgroundColor: COLORS.red, alignItems: 'center', justifyContent: 'center' },
-	headerBadgeText: { color: COLORS.white, fontFamily: 'LilitaOne_400Regular', fontSize: 9 },
+	roundButton: { width: 40, height: 40, borderRadius: 12, backgroundColor: COLORS.mint, alignItems: 'center', justifyContent: 'center' },
 	scroll: { flex: 1 },
 	scrollContent: { paddingBottom: 18 },
 	hero: { height: 252, backgroundColor: COLORS.white, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18 },

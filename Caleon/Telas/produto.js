@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import Feather from '@expo/vector-icons/Feather';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import BotaoSacola from '../Componentes/BotaoSacola';
 import NavegacaoInferior from '../Componentes/NavegacaoInferior';
 
 const COLORS = {
@@ -30,14 +31,6 @@ const categories = [
 	{ name: 'Laticínios', icon: 'cheese' },
 	{ name: 'Limpeza', icon: 'spray-bottle' },
 ];
-
-function NotificationBadge() {
-	return (
-		<View style={styles.badge}>
-			<Text style={styles.badgeText}>1</Text>
-		</View>
-	);
-}
 
 export default function TelaProdutos({ navigation, onBack }) {
 	const [fontsLoaded] = useFonts({
@@ -74,16 +67,7 @@ export default function TelaProdutos({ navigation, onBack }) {
 						>
 							<Feather name="chevron-left" size={27} color={COLORS.white} />
 						</TouchableOpacity>
-						<TouchableOpacity
-							style={styles.bagButton}
-							activeOpacity={0.8}
-							onPress={() => navigation?.navigate('TelaSacola')}
-							accessibilityRole="button"
-							accessibilityLabel="Sacola, 1 item"
-						>
-							<Feather name="shopping-bag" size={22} color={COLORS.white} />
-							<NotificationBadge />
-						</TouchableOpacity>
+						<BotaoSacola navigation={navigation} />
 					</View>
 					<Text style={styles.title}>Produtos</Text>
 				</View>
@@ -160,9 +144,9 @@ const styles = StyleSheet.create({
 		justifyContent: 'space-between',
 	},
 	backButton: {
-		width: 42,
-		height: 42,
-		borderRadius: 21,
+		width: 40,
+		height: 40,
+		borderRadius: 12,
 		backgroundColor: COLORS.primaryLight,
 		alignItems: 'center',
 		justifyContent: 'center',
@@ -172,32 +156,6 @@ const styles = StyleSheet.create({
 		fontFamily: 'LilitaOne_400Regular',
 		fontSize: 30,
 		marginTop: 14,
-	},
-	bagButton: {
-		width: 42,
-		height: 42,
-		borderRadius: 12,
-		backgroundColor: COLORS.primaryLight,
-		alignItems: 'center',
-		justifyContent: 'center',
-	},
-	badge: {
-		position: 'absolute',
-		top: -4,
-		right: -5,
-		minWidth: 17,
-		height: 17,
-		paddingHorizontal: 3,
-		borderRadius: 9,
-		backgroundColor: COLORS.notification,
-		alignItems: 'center',
-		justifyContent: 'center',
-	},
-	badgeText: {
-		color: COLORS.white,
-		fontFamily: 'LilitaOne_400Regular',
-		fontSize: 10,
-		lineHeight: 13,
 	},
 	content: {
 		flex: 1,

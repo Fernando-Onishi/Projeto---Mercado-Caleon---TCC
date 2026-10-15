@@ -3,6 +3,7 @@ import { useFonts } from 'expo-font';
 import EvilIcons from '@expo/vector-icons/EvilIcons';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import Fontisto from '@expo/vector-icons/Fontisto';
+import Feather from '@expo/vector-icons/Feather';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { useWindowDimensions } from 'react-native';
 import { auth } from '../Config/FireBaseConfig';
@@ -214,8 +215,9 @@ export default function TelaCadastro({ navigation }) {
 								activeOpacity={0.7}
 								onPress={() => navigation.goBack()}
 								accessibilityRole="button"
+								accessibilityLabel="Voltar"
 							>
-								<Text style={styles.backText}>Voltar</Text>
+								<Feather name="chevron-left" size={27} color="#ffffff" />
 							</TouchableOpacity>
 
 							<View style={styles.termsContainer}>
@@ -278,7 +280,7 @@ const styles = StyleSheet.create({
 		paddingTop: 24,
 		paddingBottom: 20,
 		alignItems: 'center',
-		backgroundColor: '#ffffff',
+		backgroundColor: '#F1F3F5',
 		borderTopLeftRadius: 24,
 		borderTopRightRadius: 24,
 	},
@@ -354,13 +356,12 @@ const styles = StyleSheet.create({
 		fontSize: 14,
 	},
 	backButton: {
-		paddingHorizontal: 16,
-		paddingVertical: 14,
-	},
-	backText: {
-		color: '#1B4B3D',
-		fontFamily: 'MontserratMedium',
-		fontSize: 13,
+		width: 40,
+		height: 40,
+		borderRadius: 12,
+		backgroundColor: '#40B190',
+		alignItems: 'center',
+		justifyContent: 'center',
 	},
 	termsContainer: {
 		width: '100%',
