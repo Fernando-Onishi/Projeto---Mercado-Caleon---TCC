@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useFonts } from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
 import {
@@ -17,18 +17,22 @@ import NavegacaoInferior from '../Componentes/NavegacaoInferior';
 const COLORS = {
 	primaryDark: '#1B4B3D',
 	primaryLight: '#40B190',
+	icon: '#194B38',
 	background: '#F1F3F5',
 	white: '#FFFFFF',
 	black: '#000000',
-	cardBorder: '#BFBFBF',
-	notification: '#FF0000',
+	cardBorder: '#EAEAEA',
 };
 
 const categories = [
-	{ name: 'Hortifruti', icon: 'food-apple-outline' },
+	{ name: 'Horti-Fruti', routeCategory: 'Horti-Fruti', icon: 'food-apple-outline' },
 	{ name: 'Carnes', icon: 'food-steak' },
 	{ name: 'Bebidas', icon: 'cup-outline' },
 	{ name: 'Laticínios', icon: 'cheese' },
+	{ name: 'Doces', icon: 'candy-outline' },
+	{ name: 'Congelados', icon: 'snowflake' },
+	{ name: 'Higiene', icon: 'hand-wash' },
+	{ name: 'Padaria', icon: 'bread-slice' },
 	{ name: 'Limpeza', icon: 'spray-bottle' },
 ];
 
@@ -37,8 +41,6 @@ export default function TelaProdutos({ navigation, onBack }) {
 		LilitaOne_400Regular: require('@expo-google-fonts/lilita-one/400Regular/LilitaOne_400Regular.ttf'),
 		Montserrat_700Bold: require('@expo-google-fonts/montserrat/700Bold/Montserrat_700Bold.ttf'),
 	});
-	const [selectedCategory, setSelectedCategory] = useState(null);
-
 	if (!fontsLoaded) return null;
 
 	function goBack() {
@@ -67,7 +69,7 @@ export default function TelaProdutos({ navigation, onBack }) {
 						>
 							<Feather name="chevron-left" size={27} color={COLORS.white} />
 						</TouchableOpacity>
-						<BotaoSacola navigation={navigation} />
+						<BotaoSacola navigation={navigation} size={40} />
 					</View>
 					<Text style={styles.title}>Produtos</Text>
 				</View>
@@ -81,29 +83,27 @@ export default function TelaProdutos({ navigation, onBack }) {
 							<Text style={styles.sectionTitle}>Categorias</Text>
 						</View>
 						<View style={styles.categoriesGrid}>
-							{categories.map((category) => {
-								const selected = selectedCategory === category.name;
-
-								return (
-									<TouchableOpacity
-										key={category.name}
-										style={[styles.categoryCard, selected && styles.selectedCategoryCard]}
-										onPress={() => setSelectedCategory(category.name)}
-										activeOpacity={0.8}
-										accessibilityRole="button"
-										accessibilityState={{ selected }}
-									>
-										<View style={styles.categoryIcon}>
-											<MaterialCommunityIcons
-												name={category.icon}
-												size={34}
-												color={COLORS.primaryLight}
-											/>
-										</View>
-										<Text style={styles.categoryName}>{category.name}</Text>
-									</TouchableOpacity>
-								);
-							})}
+							{categories.map((category) => (
+								<TouchableOpacity
+									key={category.name}
+									style={styles.categoryCard}
+									onPress={() => navigation.navigate('ProdutosCategoriaScreen', {
+										categoria: category.routeCategory || category.name,
+									})}
+									activeOpacity={0.8}
+									accessibilityRole="button"
+									accessibilityLabel={`Ver produtos de ${category.name}`}
+								>
+									<View style={styles.categoryIcon}>
+										<MaterialCommunityIcons
+											name={category.icon}
+											size={34}
+											color={COLORS.icon}
+										/>
+									</View>
+									<Text style={styles.categoryName}>{category.name}</Text>
+								</TouchableOpacity>
+							))}
 						</View>
 					</ScrollView>
 				</View>
@@ -181,13 +181,12 @@ const styles = StyleSheet.create({
 		rowGap: 14,
 	},
 	categoryCard: {
-		width: '47%',
+		width: '48%',
 		minHeight: 137,
-		paddingVertical: 17,
-		paddingHorizontal: 8,
+		padding: 20,
 		borderWidth: 1,
 		borderColor: COLORS.cardBorder,
-		borderRadius: 16,
+		borderRadius: 18,
 		backgroundColor: COLORS.white,
 		alignItems: 'center',
 		justifyContent: 'center',
@@ -201,18 +200,18 @@ const styles = StyleSheet.create({
 		borderColor: COLORS.primaryLight,
 	},
 	categoryIcon: {
-		width: 54,
-		height: 54,
-		borderRadius: 27,
-		backgroundColor: COLORS.background,
+		width: 58,
+		height: 58,
+		borderRadius: 29,
+		backgroundColor: '#E6F4EF',
 		alignItems: 'center',
 		justifyContent: 'center',
-		marginBottom: 11,
+		marginBottom: 10,
 	},
 	categoryName: {
 		color: COLORS.black,
 		fontFamily: 'LilitaOne_400Regular',
-		fontSize: 23,
+		fontSize: 20,
 		textAlign: 'center',
 	},
 });

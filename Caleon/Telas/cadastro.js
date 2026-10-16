@@ -3,10 +3,12 @@ import { useFonts } from 'expo-font';
 import EvilIcons from '@expo/vector-icons/EvilIcons';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import Fontisto from '@expo/vector-icons/Fontisto';
-import Feather from '@expo/vector-icons/Feather';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { useWindowDimensions } from 'react-native';
-import { auth } from '../Config/FireBaseConfig';
+import { auth, db } from '../Config/FireBaseConfig';
+import { getHomeRouteByRole } from '../src/utils/getUserRole';
+import { getRoleByEmail } from '../src/utils/getRoleByEmail';
 import {
 	Alert,
 	Image,
@@ -55,6 +57,7 @@ export default function TelaCadastro({ navigation }) {
 	const logoSize = Math.min(280, screenWidth * 0.68, screenHeight * 0.36);
 	const brandMinHeight = Math.max(180, Math.min(250, screenHeight * 0.3));
 	const [fontsLoaded] = useFonts({
+		Lalezar: require('@expo-google-fonts/lalezar/400Regular/Lalezar_400Regular.ttf'),
 		LuckiestGuy: require('@expo-google-fonts/luckiest-guy/400Regular/LuckiestGuy_400Regular.ttf'),
 		MontserratRegular: require('@expo-google-fonts/montserrat/400Regular/Montserrat_400Regular.ttf'),
 		MontserratMedium: require('@expo-google-fonts/montserrat/500Medium/Montserrat_500Medium.ttf'),
@@ -88,16 +91,34 @@ export default function TelaCadastro({ navigation }) {
 		setFeedback(null);
 		setIsSubmitting(true);
 		try {
-			const credential = await createUserWithEmailAndPassword(auth, email.trim(), password);
+			const normalizedEmail = email.trim().toLowerCase();
+			const credential = await createUserWithEmailAndPassword(auth, normalizedEmail, password);
+			const role = getRoleByEmail(normalizedEmail);
 			let profileUpdateFailed = false;
+			let userDocumentSaveFailed = false;
 			try {
 				await updateProfile(credential.user, { displayName: name.trim() });
 			} catch {
 				profileUpdateFailed = true;
 			}
-			navigation.replace('TelaSplash');
-			if (profileUpdateFailed) {
-				Alert.alert('Cadastro concluído', 'Sua conta foi criada, mas não foi possível salvar o nome no perfil.');
+			try {
+				await setDoc(doc(db, 'users', credential.user.uid), {
+					uid: credential.user.uid,
+					nome: name.trim(),
+					email: normalizedEmail,
+					role,
+					createdAt: serverTimestamp(),
+				});
+			} catch (error) {
+				console.error('Não foi possível salvar os dados da conta no Firestore.', error);
+				userDocumentSaveFailed = true;
+			}
+			navigation.replace(getHomeRouteByRole(role));
+			if (profileUpdateFailed || userDocumentSaveFailed) {
+				const warnings = [];
+				if (profileUpdateFailed) warnings.push('não foi possível salvar o nome no perfil');
+				if (userDocumentSaveFailed) warnings.push('não foi possível salvar os dados do perfil no Firestore');
+				Alert.alert('Cadastro concluído', `Sua conta foi criada, mas ${warnings.join(' e ')}.`);
 			}
 		} catch (error) {
 			const messages = {
@@ -211,13 +232,13 @@ export default function TelaCadastro({ navigation }) {
 							</TouchableOpacity>
 
 							<TouchableOpacity
-								style={styles.backButton}
+								style={styles.backLink}
 								activeOpacity={0.7}
 								onPress={() => navigation.goBack()}
 								accessibilityRole="button"
 								accessibilityLabel="Voltar"
 							>
-								<Feather name="chevron-left" size={27} color="#ffffff" />
+								<Text style={styles.backLinkText}>Voltar</Text>
 							</TouchableOpacity>
 
 							<View style={styles.termsContainer}>
@@ -355,13 +376,16 @@ const styles = StyleSheet.create({
 		fontFamily: 'MontserratBold',
 		fontSize: 14,
 	},
-	backButton: {
-		width: 40,
-		height: 40,
-		borderRadius: 12,
-		backgroundColor: '#40B190',
+	backLink: {
+		minHeight: 40,
+		paddingHorizontal: 16,
 		alignItems: 'center',
 		justifyContent: 'center',
+	},
+	backLinkText: {
+		color: '#D2D2D2',
+		fontFamily: 'Lalezar',
+		fontSize: 14,
 	},
 	termsContainer: {
 		width: '100%',

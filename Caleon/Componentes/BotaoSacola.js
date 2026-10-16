@@ -3,18 +3,18 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import useSacolaCount from './useSacolaCount';
 
-export default function BotaoSacola({ navigation }) {
+export default function BotaoSacola({ navigation, size = 50 }) {
 	const bagCount = useSacolaCount();
 
 	return (
 		<TouchableOpacity
-			style={styles.button}
+			style={[styles.button, { width: size, height: size, borderRadius: size * 0.3 }]}
 			onPress={() => navigation?.navigate('TelaSacola')}
 			activeOpacity={0.8}
 			accessibilityRole="button"
 			accessibilityLabel={`Abrir sacola, ${bagCount} ${bagCount === 1 ? 'item' : 'itens'}`}
 		>
-			<MaterialCommunityIcons name="shopping-outline" size={34} color="#ffffff" />
+			<MaterialCommunityIcons name="shopping-outline" size={size * 0.68} color="#ffffff" />
 			{bagCount > 0 && (
 				<View style={styles.badge}>
 					<Text style={styles.badgeText}>{bagCount > 99 ? '99+' : bagCount}</Text>
@@ -26,9 +26,6 @@ export default function BotaoSacola({ navigation }) {
 
 const styles = StyleSheet.create({
 	button: {
-		width: 50,
-		height: 50,
-		borderRadius: 16,
 		backgroundColor: '#40B190',
 		alignItems: 'center',
 		justifyContent: 'center',

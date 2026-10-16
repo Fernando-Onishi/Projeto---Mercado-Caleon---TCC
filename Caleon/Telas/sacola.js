@@ -22,6 +22,8 @@ import { Feather, Ionicons } from '@expo/vector-icons';
 import NavegacaoInferior from '../Componentes/NavegacaoInferior';
 import { publishSacolaCount } from '../Componentes/useSacolaCount';
 import { PRODUCTS } from '../Config/Produtos';
+import { getFavorites, toggleFavorite as persistFavorite } from '../Config/ProdutoStorage';
+import { showGlobalNotification } from '../Componentes/NotificacaoGlobal';
 
 if (
   Platform.OS === 'android' &&
@@ -32,6 +34,7 @@ if (
 
 const SACOLA_KEY = '@sacola_itens';
 const DELETE_WIDTH = 80;
+const FAVORITE_WIDTH = 80;
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
 const itensIniciais = [
@@ -85,75 +88,121 @@ const itensIniciais = [
   },
 ];
 
-function SwipeableCard({ children, onDelete }) {
+function SwipeableCard({ children, onDelete, onFavorite }) {
   const translateX = useRef(new Animated.Value(0)).current;
-  const isOpen = useRef(false);
+  const [favoriteCommitted, setFavoriteCommitted] = useState(false);
+  const favoriteCommittedRef = useRef(false);
+  const onDeleteRef = useRef(onDelete);
+  const onFavoriteRef = useRef(onFavorite);
+  onDeleteRef.current = onDelete;
+  onFavoriteRef.current = onFavorite;
+
+  const updateFavoriteCommitted = (value) => {
+    if (favoriteCommittedRef.current !== value) {
+      favoriteCommittedRef.current = value;
+      setFavoriteCommitted(value);
+    }
+  };
 
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, gestureState) =>
-        Math.abs(gestureState.dx) > 15 && Math.abs(gestureState.dy) < 10,
+        Math.abs(gestureState.dx) > 8 &&
+        Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 1.15,
+      onMoveShouldSetPanResponderCapture: (_, gestureState) =>
+        Math.abs(gestureState.dx) > 8 &&
+        Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 1.15,
+      onPanResponderGrant: () => {
+        translateX.stopAnimation();
+      },
+      onPanResponderTerminationRequest: () => false,
       onPanResponderMove: (_, gestureState) => {
-        const base = isOpen.current ? -DELETE_WIDTH : 0;
-        const nextX = base + gestureState.dx;
-        translateX.setValue(Math.max(Math.min(nextX, 0), -DELETE_WIDTH));
+        translateX.setValue(Math.max(Math.min(gestureState.dx, FAVORITE_WIDTH), -DELETE_WIDTH));
+        updateFavoriteCommitted(gestureState.dx >= FAVORITE_WIDTH / 2);
       },
       onPanResponderRelease: (_, gestureState) => {
-        const base = isOpen.current ? -DELETE_WIDTH : 0;
-        const finalX = base + gestureState.dx;
-
-        if (finalX < -DELETE_WIDTH / 2) {
-          Animated.spring(translateX, {
-            toValue: -DELETE_WIDTH,
+        if (
+          gestureState.dx < -DELETE_WIDTH / 2 ||
+          (gestureState.vx < -0.5 && gestureState.dx < -20)
+        ) {
+          updateFavoriteCommitted(false);
+          Animated.timing(translateX, {
+            toValue: -SCREEN_WIDTH,
+            duration: 220,
             useNativeDriver: true,
-            friction: 8,
-            tension: 40,
-          }).start();
-          isOpen.current = true;
+          }).start(({ finished }) => {
+            if (finished) {
+              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+              onDeleteRef.current?.();
+            }
+          });
+        } else if (
+          gestureState.dx > FAVORITE_WIDTH / 2 ||
+          (gestureState.vx > 0.5 && gestureState.dx > 20)
+        ) {
+          onFavoriteRef.current?.();
+          updateFavoriteCommitted(true);
+          Animated.sequence([
+            Animated.spring(translateX, {
+              toValue: FAVORITE_WIDTH,
+              useNativeDriver: true,
+              friction: 8,
+              tension: 40,
+            }),
+            Animated.delay(250),
+            Animated.spring(translateX, {
+              toValue: 0,
+              useNativeDriver: true,
+              friction: 8,
+              tension: 40,
+            }),
+          ]).start(({ finished }) => {
+            if (finished) updateFavoriteCommitted(false);
+          });
         } else {
+          updateFavoriteCommitted(false);
           Animated.spring(translateX, {
             toValue: 0,
             useNativeDriver: true,
             friction: 8,
             tension: 40,
           }).start();
-          isOpen.current = false;
         }
+      },
+      onPanResponderTerminate: () => {
+        updateFavoriteCommitted(false);
+        Animated.spring(translateX, { toValue: 0, useNativeDriver: true }).start();
       },
     })
   ).current;
-
-  const handleDelete = () => {
-    Animated.timing(translateX, {
-      toValue: -SCREEN_WIDTH,
-      duration: 300,
-      useNativeDriver: true,
-    }).start(() => {
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      onDelete();
-    });
-  };
 
   const deleteOpacity = translateX.interpolate({
     inputRange: [-DELETE_WIDTH, 0],
     outputRange: [1, 0],
     extrapolate: 'clamp',
   });
-
+  const favoriteOpacity = translateX.interpolate({
+    inputRange: [0, FAVORITE_WIDTH],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
   return (
     <View style={styles.swipeShadow}>
       <View style={styles.swipeContainer}>
+        <Animated.View style={[styles.favoriteBtnBg, { opacity: favoriteOpacity }]}>
+          <View style={styles.favoriteIconLayer}>
+            <Ionicons
+              name={favoriteCommitted ? 'heart' : 'heart-outline'}
+              size={38}
+              color="#fff"
+            />
+          </View>
+        </Animated.View>
         <Animated.View style={[styles.deleteBtnBg, { opacity: deleteOpacity }]}>
-          <TouchableOpacity
-            style={styles.deleteBtnAction}
-            onPress={handleDelete}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel="Excluir produto da sacola"
-          >
+          <View style={styles.deleteBtnAction}>
             <Feather name="trash-2" size={40} color="#fff" />
-          </TouchableOpacity>
+          </View>
         </Animated.View>
         <Animated.View
           style={{ width: '100%', zIndex: 1, transform: [{ translateX }] }}
@@ -236,15 +285,38 @@ export default function TelaSacola({ navigation }) {
     });
   };
 
-  const toggleFavorito = (id) => {
-    setItens((prev) => {
-      const novos = prev.map((item) =>
-        item.id === id ? { ...item, favorito: !item.favorito } : item
+  const definirFavorito = async (item) => {
+    const productId =
+      item.productId || PRODUCTS.find((product) => product.name === item.nome)?.id;
+
+    try {
+      const favoriteIds = await getFavorites();
+      const favorito = productId
+        ? !favoriteIds.includes(productId)
+        : !item.favorito;
+
+      if (productId) {
+        await persistFavorite(productId);
+      }
+
+      setItens((prev) => {
+        const novos = prev.map((produto) =>
+          produto.id === item.id ? { ...produto, favorito } : produto
+        );
+        salvarSacola(novos);
+        return novos;
+      });
+      showGlobalNotification(
+        favorito
+          ? `${item.nome} salvo nos favoritos`
+          : `${item.nome} removido dos favoritos`
       );
-      salvarSacola(novos);
-      return novos;
-    });
+    } catch (error) {
+      console.error('Erro ao atualizar favorito:', error);
+    }
   };
+
+  const toggleFavorito = (item) => definirFavorito(item);
 
   const abrirDetalhes = (item) => {
     const productId =
@@ -264,8 +336,21 @@ export default function TelaSacola({ navigation }) {
   const total = subtotal + taxaServico;
 
   const renderItem = (item) => (
-    <SwipeableCard key={item.id} onDelete={() => removerItem(item.id)}>
-      <View style={styles.card}>
+    <SwipeableCard
+      key={item.id}
+      onDelete={() => {
+        removerItem(item.id);
+        showGlobalNotification(`${item.nome} removido da sacola`);
+      }}
+      onFavorite={() => toggleFavorito(item)}
+    >
+      <TouchableOpacity
+        style={styles.card}
+        onPress={() => abrirDetalhes(item)}
+        activeOpacity={0.9}
+        accessibilityRole="button"
+        accessibilityLabel={`Ver detalhes de ${item.nome}`}
+      >
         {item.desconto ? (
           <View style={styles.descontoBadge}>
             <Text style={styles.descontoText}>{item.desconto}</Text>
@@ -279,69 +364,65 @@ export default function TelaSacola({ navigation }) {
               style={styles.produtoImagem}
               resizeMode="contain"
             />
-            {item.favorito ? (
-              <TouchableOpacity
-                style={styles.favoritoOverlay}
-                onPress={() => toggleFavorito(item.id)}
-              >
-                <Ionicons name="heart" size={14} color="#fff" />
-              </TouchableOpacity>
-            ) : null}
           </View>
 
           <View style={styles.produtoInfo}>
-            <Text style={styles.produtoNome}>{item.nome}</Text>
+            <View style={styles.productTitleRow}>
+              <Text style={styles.produtoNome}>{item.nome}</Text>
+              {item.peso ? <Text style={styles.produtoPeso}>{item.peso}</Text> : null}
+            </View>
             <View style={styles.precoRow}>
               <Text style={styles.produtoPreco}>
                 R$ {Number(item.preco).toFixed(2).replace('.', ',')}
-                <Text style={styles.produtoUnidade}>{item.unidade}</Text>
               </Text>
               {item.precoOriginal ? (
                 <Text style={styles.precoOriginal}>
-                  R${Number(item.precoOriginal).toFixed(2).replace('.', ',')}/u
+                  R$ {Number(item.precoOriginal).toFixed(2).replace('.', ',')}
                 </Text>
               ) : null}
             </View>
-            {item.peso ? <Text style={styles.produtoPeso}>{item.peso}</Text> : null}
+            <View style={styles.cardMetaRow}>
+              <View style={styles.quantidadeContainer}>
+                <TouchableOpacity
+                  style={styles.quantidadeBtn}
+                  onPress={(event) => {
+                    event.stopPropagation();
+                    alterarQuantidade(item.id, -1);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Diminuir quantidade de ${item.nome}`}
+                >
+                  <Feather name="minus" size={16} color="#000" strokeWidth={3} />
+                </TouchableOpacity>
+                <Text style={styles.quantidadeText}>{item.quantidade}</Text>
+                <TouchableOpacity
+                  style={styles.quantidadeBtn}
+                  onPress={(event) => {
+                    event.stopPropagation();
+                    alterarQuantidade(item.id, 1);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Aumentar quantidade de ${item.nome}`}
+                >
+                  <Feather name="plus" size={16} color="#000" strokeWidth={3} />
+                </TouchableOpacity>
+              </View>
+            </View>
           </View>
 
           <View style={styles.cardActions}>
-            {item.favorito ? (
-              <TouchableOpacity
-                style={styles.favoritoBtnAtivo}
-                onPress={() => toggleFavorito(item.id)}
-              >
-                <Ionicons name="heart" size={22} color="#fff" />
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                style={styles.actionBtn}
-                onPress={() => abrirDetalhes(item)}
-                accessibilityRole="button"
-                accessibilityLabel={`Ver detalhes de ${item.nome}`}
-              >
-                <Ionicons name="chevron-forward" size={22} color="#fff" />
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity
+              style={styles.actionBtn}
+              onPress={() => abrirDetalhes(item)}
+              accessibilityRole="button"
+              accessibilityLabel={`Ver detalhes de ${item.nome}`}
+            >
+              <Ionicons name="chevron-forward" size={28} color="#111" />
+            </TouchableOpacity>
           </View>
         </View>
 
-        <View style={styles.quantidadeContainer}>
-          <TouchableOpacity
-            style={styles.quantidadeBtn}
-            onPress={() => alterarQuantidade(item.id, -1)}
-          >
-            <Feather name="minus" size={18} color="#1a8e5f" />
-          </TouchableOpacity>
-          <Text style={styles.quantidadeText}>{item.quantidade}</Text>
-          <TouchableOpacity
-            style={styles.quantidadeBtn}
-            onPress={() => alterarQuantidade(item.id, 1)}
-          >
-            <Feather name="plus" size={18} color="#1a8e5f" />
-          </TouchableOpacity>
-        </View>
-      </View>
+      </TouchableOpacity>
     </SwipeableCard>
   );
 
@@ -396,7 +477,7 @@ export default function TelaSacola({ navigation }) {
                     R$ {taxaServico.toFixed(2).replace('.', ',')}
                   </Text>
                 </View>
-                <View style={[styles.resumoRow, { marginTop: 8 }]}>
+                <View style={[styles.resumoRow, styles.totalRow]}>
                   <Text style={styles.totalLabel}>Total:</Text>
                   <Text style={styles.totalValor}>
                     R$ {total.toFixed(2).replace('.', ',')}
@@ -448,7 +529,7 @@ const styles = StyleSheet.create({
     color: '#000000',
     fontSize: 30,
     fontFamily: 'LilitaOne_400Regular',
-    marginTop: 14,
+    marginTop: 54,
   },
   painel: {
     flex: 1,
@@ -461,13 +542,15 @@ const styles = StyleSheet.create({
   listaContent: {
     flexGrow: 1,
     paddingHorizontal: 13,
-    paddingTop: 10,
+    paddingTop: 0,
     paddingBottom: 20,
   },
   checkoutSection: {
     paddingHorizontal: 14,
-    paddingTop: 8,
-    backgroundColor: '#F1F3F5',
+    paddingTop: 0,
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
   },
   swipeShadow: {
     width: '100%',
@@ -486,6 +569,24 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
     overflow: 'hidden',
     borderRadius: 13,
+  },
+  favoriteBtnBg: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: FAVORITE_WIDTH,
+    backgroundColor: '#40B190',
+    zIndex: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  favoriteIconLayer: {
+    position: 'absolute',
+    width: FAVORITE_WIDTH,
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   deleteBtnBg: {
     position: 'absolute',
@@ -510,8 +611,9 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     backgroundColor: '#fff',
-    borderRadius: 18,
-    padding: 12,
+    borderRadius: 13,
+    paddingHorizontal: 10,
+    paddingVertical: 26,
     position: 'relative',
     borderWidth: 1,
     borderColor: '#edf0ee',
@@ -519,86 +621,63 @@ const styles = StyleSheet.create({
   cardRow: { flexDirection: 'row', alignItems: 'center' },
   imagemContainer: {
     position: 'relative',
-    width: 68,
-    height: 68,
-    borderRadius: 16,
-    backgroundColor: '#f7f9f7',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  produtoImagem: { width: 58, height: 58, borderRadius: 16 },
-  favoritoOverlay: {
-    position: 'absolute',
-    bottom: -5,
-    left: -5,
-    backgroundColor: '#1a8e5f',
+    width: 94,
+    height: 94,
     borderRadius: 12,
-    width: 24,
-    height: 24,
+    backgroundColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#fff',
   },
-  produtoInfo: { flex: 1, marginLeft: 12 },
+  produtoImagem: { width: 90, height: 90, borderRadius: 12 },
+  produtoInfo: { flex: 1, marginLeft: 10 },
   produtoNome: {
-    fontSize: 18,
-    color: '#1e2a28',
+    fontSize: 22,
+    lineHeight: 27,
+    color: '#1b6848',
+    fontFamily: 'LuckiestGuy',
+  },
+  productTitleRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
+  produtoPeso: {
+    fontSize: 14,
+    color: '#fff',
+    backgroundColor: '#40B190',
+    overflow: 'hidden',
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     fontFamily: 'LuckiestGuy',
   },
   precoRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
   produtoPreco: {
-    fontSize: 16,
-    color: '#1a8e5f',
+    fontSize: 21,
+    lineHeight: 26,
+    color: '#008f65',
     fontFamily: 'LuckiestGuy',
-  },
-  produtoUnidade: {
-    fontSize: 12,
-    color: '#1a8e5f',
-    fontFamily: 'LuckiestGuy',
-    marginLeft: 2,
   },
   precoOriginal: {
-    fontSize: 11,
+    fontSize: 14,
     color: '#8b938f',
     textDecorationLine: 'line-through',
     marginLeft: 6,
     fontFamily: 'LuckiestGuy',
   },
-  produtoPeso: {
-    fontSize: 12,
-    color: '#7a847f',
-    marginTop: 3,
-    fontFamily: 'LuckiestGuy',
-  },
-  cardActions: { alignItems: 'center', justifyContent: 'center', marginLeft: 8 },
+  cardMetaRow: { flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 8 },
+  cardActions: { alignItems: 'center', justifyContent: 'center', marginLeft: 4 },
   actionBtn: {
-    backgroundColor: '#1a8e5f',
+    backgroundColor: 'transparent',
     borderRadius: 10,
-    width: 34,
-    height: 34,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  favoritoBtnAtivo: {
-    backgroundColor: '#1a8e5f',
-    borderRadius: 10,
-    width: 34,
-    height: 34,
+    width: 40,
+    height: 50,
     alignItems: 'center',
     justifyContent: 'center',
   },
   quantidadeContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'flex-end',
-    marginTop: 10,
-    backgroundColor: '#eef3f1',
-    borderRadius: 18,
-    paddingHorizontal: 6,
-    paddingVertical: 4,
-    borderWidth: 1,
-    borderColor: '#dfeae6',
+    backgroundColor: '#40B190',
+    borderRadius: 16,
+    paddingHorizontal: 7,
+    paddingVertical: 6,
   },
   quantidadeBtn: {
     width: 30,
@@ -610,11 +689,11 @@ const styles = StyleSheet.create({
   },
   quantidadeText: {
     fontSize: 18,
-    minWidth: 26,
+    minWidth: 27,
     textAlign: 'center',
-    color: '#1a1a1a',
+    color: '#fff',
     fontFamily: 'LuckiestGuy',
-    marginHorizontal: 6,
+    marginHorizontal: 4,
   },
   sacolaVazia: {
     alignItems: 'center',
@@ -629,57 +708,61 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   resumo: {
-    marginTop: 10,
+    marginTop: 0,
     paddingHorizontal: 4,
-    backgroundColor: '#fff',
-    borderRadius: 18,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#edf2ef',
+    backgroundColor: 'transparent',
+    paddingVertical: 4,
   },
   resumoRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
-  resumoLabel: { fontSize: 15, color: '#5e6965', fontFamily: 'LuckiestGuy' },
+  totalRow: {
+    borderTopWidth: 1,
+    borderColor: '#e0e0e0',
+    borderStyle: 'dashed',
+    paddingTop: 7,
+    marginBottom: 1,
+  },
+  resumoLabel: { fontSize: 17, color: '#999', fontFamily: 'LuckiestGuy' },
   resumoValor: {
-    fontSize: 15,
-    color: '#1e2a28',
+    fontSize: 17,
+    color: '#999',
     fontFamily: 'LuckiestGuy',
   },
   totalLabel: {
-    fontSize: 19,
-    color: '#1e2a28',
+    fontSize: 22,
+    color: '#00a878',
     fontFamily: 'LuckiestGuy',
   },
   totalValor: {
-    fontSize: 19,
+    fontSize: 22,
     color: '#1a8e5f',
     fontFamily: 'LuckiestGuy',
   },
   finalizarBtn: {
-    backgroundColor: '#1a8e5f',
-    borderRadius: 14,
-    paddingVertical: 16,
+    backgroundColor: '#00a878',
+    borderRadius: 15,
+    paddingVertical: 15,
     alignItems: 'center',
-    marginTop: 18,
-    marginBottom: 10,
+    marginTop: 2,
+    marginBottom: 7,
   },
   finalizarText: {
     color: '#fff',
-    fontSize: 20,
+    fontSize: 21,
     fontFamily: 'LuckiestGuy',
   },
   descontoBadge: {
     position: 'absolute',
-    top: 10,
-    left: 10,
+    top: 12,
+    left: 12,
     backgroundColor: '#ff5a5f',
-    borderRadius: 8,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     zIndex: 10,
   },
   descontoText: {
     color: '#fff',
-    fontSize: 10,
+    fontSize: 12,
     fontFamily: 'LuckiestGuy',
   },
 });

@@ -17,16 +17,18 @@ import {
 	TextInput,
 	TouchableOpacity,
 	KeyboardAvoidingView,
+	Linking,
 	Platform,
 	useWindowDimensions,
 	View,
 } from 'react-native';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import Feather from '@expo/vector-icons/Feather';
-import { auth } from '../Config/FireBaseConfig';
+import { collection, onSnapshot, orderBy, query, where } from 'firebase/firestore';
+import { auth, db } from '../Config/FireBaseConfig';
 import BotaoSacola from '../Componentes/BotaoSacola';
 import { getProfileStorageKey } from '../Config/PerfilStorage';
-import { formatCurrency, formatWeight, getProductPrice, PRODUCTS } from '../Config/Produtos';
+import { formatCurrency, formatProductUnit, getProductPrice, PRODUCTS } from '../Config/Produtos';
 import {
 	addProductToCart,
 	getCartProductIds,
@@ -36,6 +38,7 @@ import {
 } from '../Config/ProdutoStorage';
 import NavegacaoInferior from '../Componentes/NavegacaoInferior';
 import { publishSacolaCount } from '../Componentes/useSacolaCount';
+import { showGlobalNotification } from '../Componentes/NotificacaoGlobal';
 
 const colors = {
 	green: '#1B4B3D',
@@ -49,7 +52,7 @@ const colors = {
 
 const FILTER_SHEET_HEIGHT_RATIO = 0.57;
 
-const products = PRODUCTS.map((product) => ({
+const initialProducts = PRODUCTS.map((product) => ({
 	...product,
 	price: formatCurrency(getProductPrice(product, product.defaultWeightGrams)),
 	originalPrice: product.originalPricePerKg
@@ -58,11 +61,44 @@ const products = PRODUCTS.map((product) => ({
 			product.defaultWeightGrams,
 		))
 		: null,
-	weight: formatWeight(product.defaultWeightGrams),
+	weight: formatProductUnit(product, product.defaultWeightGrams),
 	discount: product.originalPricePerKg
 		? `${Math.round((1 - product.pricePerKg / product.originalPricePerKg) * 100)}% OFF`
 		: null,
 }));
+
+function mapStoredProduct(documentSnapshot) {
+	const data = documentSnapshot.data();
+	const defaultWeightGrams = Number(data.defaultWeightGrams);
+	const pricePerKg = Number(data.pricePerKg);
+	if (data.active !== true || !data.name || !Number.isFinite(defaultWeightGrams) || defaultWeightGrams <= 0 || !Number.isFinite(pricePerKg) || pricePerKg <= 0) return null;
+
+	const product = {
+		...data,
+		id: documentSnapshot.id,
+		name: typeof data.name === 'string' ? data.name : '',
+		category: data.category === 'Horti-Fruti' ? 'HortiFruti' : data.category,
+		imageUrl: typeof data.imageUrl === 'string' ? data.imageUrl : '',
+		pricePerKg,
+		originalPricePerKg: Number(data.originalPricePerKg) > pricePerKg ? Number(data.originalPricePerKg) : null,
+		averageWeightGrams: Number(data.averageWeightGrams) || defaultWeightGrams,
+		defaultWeightGrams,
+		availableWeights: Array.isArray(data.availableWeights) && data.availableWeights.length
+			? data.availableWeights.filter((weight) => Number.isFinite(Number(weight)) && Number(weight) > 0).map(Number)
+			: [defaultWeightGrams],
+	};
+	return {
+		...product,
+		price: formatCurrency(getProductPrice(product, defaultWeightGrams)),
+		originalPrice: product.originalPricePerKg
+			? formatCurrency(getProductPrice({ ...product, pricePerKg: product.originalPricePerKg }, defaultWeightGrams))
+			: null,
+		weight: formatProductUnit(product, defaultWeightGrams),
+		discount: product.originalPricePerKg
+			? `${Math.round((1 - product.pricePerKg / product.originalPricePerKg) * 100)}% OFF`
+			: null,
+	};
+}
 
 const categories = [
 	'HortiFruti',
@@ -81,11 +117,11 @@ const filterOptions = [
 	{ name: 'Carnes', category: 'Carnes', icon: 'food-steak' },
 	{ name: 'Bebidas', category: 'Bebidas', icon: 'cup-outline' },
 	{ name: 'Laticínios', category: 'Laticínios', icon: 'cheese' },
+	{ name: 'Limpeza', category: 'Limpeza', icon: 'spray-bottle' },
 	{ name: 'Doces', category: 'Doces', icon: 'candy-outline' },
 	{ name: 'Congelados', category: 'Congelados', icon: 'snowflake' },
 	{ name: 'Higiene', category: 'Higiene', icon: 'hand-wash' },
 	{ name: 'Padaria', category: 'Padaria', icon: 'bread-slice' },
-	{ name: 'Limpeza', category: 'Limpeza', icon: 'spray-bottle' },
 	{ name: 'Preço', type: 'price', icon: 'sort-ascending' },
 ];
 
@@ -108,26 +144,26 @@ function formatCep(value) {
 }
 
 function ProductCard({ product, width, onOpen, onToggleCart, onToggleFavorite, isFavorite, isInCart }) {
-	const scale = width / 145;
+	const scale = width / 160;
 
 	return (
 		<View style={[styles.productCard, {
 			width,
-			minHeight: 180 * scale,
-			padding: 7 * scale,
-			borderRadius: 25 * scale,
+			height: width * 1.12,
+			padding: width * 0.055,
+			borderRadius: width * 0.085,
 		}]}>
 			<TouchableOpacity style={styles.productMain} onPress={onOpen} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel={`Ver detalhes de ${product.name}`}>
 				<View style={[styles.productImage, {
-					height: 61 * scale,
-					borderRadius: 7 * scale,
+					height: width * 0.48,
+					borderRadius: width * 0.055,
 				}]}>
 					{product.discount ? <Text style={[styles.discount, {
 						left: 2 * scale,
 						top: 3 * scale,
-						fontSize: 6 * scale,
-						paddingHorizontal: 3 * scale,
-						borderRadius: 3 * scale,
+						fontSize: 7 * scale,
+						paddingHorizontal: 5 * scale,
+						borderRadius: 4 * scale,
 					}]}>{product.discount}</Text> : null}
 					<Image source={{ uri: product.imageUrl }} style={styles.productImageContent} resizeMode="contain" />
 					<TouchableOpacity
@@ -143,13 +179,13 @@ function ProductCard({ product, width, onOpen, onToggleCart, onToggleFavorite, i
 						/>
 					</TouchableOpacity>
 				</View>
-				<Text style={[styles.productName, { fontSize: 10 * scale, marginTop: 4 * scale }]} numberOfLines={1}>
-					{product.name} <Text style={[styles.weight, { fontSize: 7 * scale }]}>{product.weight}</Text>
+				<Text style={[styles.productName, { fontSize: 11 * scale, marginTop: 7 * scale }]} numberOfLines={1}>
+					{product.name} <Text style={[styles.weight, { fontSize: 8 * scale }]}>{product.weight}</Text>
 				</Text>
 				<View style={styles.priceRow}>
-					<Text style={[styles.price, { fontSize: 12 * scale, marginTop: 1 * scale }]}>{product.price}</Text>
+					<Text style={[styles.price, { fontSize: 16 * scale, marginTop: 2 * scale }]}>{product.price}</Text>
 					{product.originalPrice ? (
-						<Text style={[styles.originalPrice, { fontSize: 7 * scale }]}>
+						<Text style={[styles.originalPrice, { fontSize: 8 * scale }]}>
 							{product.originalPrice}
 						</Text>
 					) : null}
@@ -157,17 +193,17 @@ function ProductCard({ product, width, onOpen, onToggleCart, onToggleFavorite, i
 			</TouchableOpacity>
 			<TouchableOpacity
 				style={[styles.addButton, isInCart && styles.addedButton, {
-					height: 15 * scale,
-					borderRadius: 8 * scale,
-					marginTop: 4 * scale,
+					height: width * 0.18,
+					borderRadius: width * 0.055,
+					marginTop: width * 0.035,
 				}]}
 				activeOpacity={0.8}
 				onPress={() => onToggleCart(product, isInCart)}
 				accessibilityRole="button"
 				accessibilityLabel={`${product.name}, ${isInCart ? 'remover da' : 'adicionar à'} sacola`}
 			>
-				<MaterialCommunityIcons name={isInCart ? 'shopping' : 'shopping-outline'} size={9 * scale} color={colors.white} />
-				<Text style={[styles.addButtonText, { fontSize: 6 * scale }]}>
+				<MaterialCommunityIcons name={isInCart ? 'shopping' : 'shopping-outline'} size={12 * scale} color={colors.white} />
+				<Text style={[styles.addButtonText, { fontSize: 8 * scale }]}>
 					{isInCart ? 'Adicionado' : 'Adicionar à sacola'}
 				</Text>
 			</TouchableOpacity>
@@ -202,6 +238,101 @@ function ProductSection({ title, products: sectionProducts, cardWidth, navigatio
 	);
 }
 
+function BannerSlide({ banner, width, onPress }) {
+	const [aspectRatio, setAspectRatio] = useState(3);
+	const imageHeight = Math.max(120, width / aspectRatio);
+
+	useEffect(() => {
+		let active = true;
+		Image.getSize(
+			banner.imageUrl,
+			(imageWidth, imageHeight) => {
+				if (active && imageWidth > 0 && imageHeight > 0) {
+					setAspectRatio(imageWidth / imageHeight);
+				}
+			},
+			(error) => {
+				console.error(`Não foi possível carregar as dimensões do banner ${banner.id}.`, error);
+			},
+		);
+		return () => { active = false; };
+	}, [banner.id, banner.imageUrl]);
+
+	return (
+		<TouchableOpacity
+			style={[styles.promoBanner, { width, height: imageHeight }]}
+			onPress={onPress}
+			activeOpacity={banner.link || banner.categoryId ? 0.85 : 1}
+			accessibilityRole="imagebutton"
+			accessibilityLabel={banner.title || 'Banner promocional'}
+		>
+			<Image
+				source={{ uri: banner.imageUrl }}
+				style={styles.promoBannerImage}
+				resizeMode="contain"
+				onError={(error) => console.error(`Não foi possível carregar o banner ${banner.id}.`, error.nativeEvent)}
+			/>
+		</TouchableOpacity>
+	);
+}
+
+function BannerCarousel({ banners, width, onBannerPress }) {
+	const [activeIndex, setActiveIndex] = useState(0);
+
+	useEffect(() => {
+		if (activeIndex >= banners.length) setActiveIndex(Math.max(0, banners.length - 1));
+	}, [activeIndex, banners.length]);
+
+	if (banners.length === 0) {
+		return (
+			<View style={styles.promoCarousel}>
+				<View style={styles.promoEmptyState} accessibilityLabel="Nenhuma promoção ativa">
+					<View style={styles.promoEmptyIcon}>
+						<MaterialCommunityIcons name="tag-heart-outline" size={30} color="#FFE08A" />
+					</View>
+					<View style={styles.promoEmptyCopy}>
+						<Text style={styles.promoEmptyTitle}>Novas ofertas em breve</Text>
+						<Text style={styles.promoEmptyDescription}>Acompanhe aqui os próximos descontos</Text>
+					</View>
+				</View>
+			</View>
+		);
+	}
+
+	return (
+		<View style={styles.promoCarousel}>
+			<FlatList
+				data={banners}
+				horizontal
+				pagingEnabled
+				showsHorizontalScrollIndicator={false}
+				keyExtractor={(banner) => banner.id}
+				getItemLayout={(_, index) => ({ length: width, offset: width * index, index })}
+				onMomentumScrollEnd={(event) => {
+					setActiveIndex(Math.round(event.nativeEvent.contentOffset.x / width));
+				}}
+				renderItem={({ item }) => (
+					<BannerSlide
+						banner={item}
+						width={width}
+						onPress={() => onBannerPress(item)}
+					/>
+				)}
+			/>
+			{banners.length > 1 ? (
+				<View style={styles.promoDots} accessibilityLabel={`Banner ${activeIndex + 1} de ${banners.length}`}>
+					{banners.map((banner, index) => (
+						<View
+							key={banner.id}
+							style={[styles.promoDot, index === activeIndex && styles.promoDotActive]}
+						/>
+					))}
+				</View>
+			) : null}
+		</View>
+	);
+}
+
 const catalogCategories = [
 	{ name: 'Hortí-Fruti', image: 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&w=700&q=85' },
 	{ name: 'Bebidas', image: 'https://images.unsplash.com/photo-1544145945-f90425340c7e?auto=format&w=700&q=85' },
@@ -232,7 +363,7 @@ export function Produtos({ navigation }) {
 						<Feather name="chevron-left" size={27} color="white" />
 					</TouchableOpacity>
 					<Text style={catalogStyles.title}>Produtos</Text>
-					<BotaoSacola navigation={navigation} />
+					<BotaoSacola navigation={navigation} size={40} />
 				</View>
 				<FlatList
 					data={catalogCategories}
@@ -263,7 +394,7 @@ const catalogStyles = StyleSheet.create({
 	safeArea: { flex: 1, backgroundColor: colors.green },
 	topBand: { height: 40, backgroundColor: colors.green },
 	screen: { flex: 1, marginTop: -1, borderTopLeftRadius: 28, borderTopRightRadius: 28, backgroundColor: '#F1F3F5', overflow: 'hidden' },
-	header: { height: 72, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+	header: { height: 72, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
 	backButton: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#40B190' },
 	title: { position: 'absolute', left: 56, right: 56, textAlign: 'center', color: colors.ink, fontFamily: 'LilitaOne_400Regular', fontSize: 30 },
 	list: { flex: 1 },
@@ -274,9 +405,9 @@ const catalogStyles = StyleSheet.create({
 	categoryName: { marginTop: 7, color: colors.ink, fontFamily: 'LilitaOne_400Regular', fontSize: 18, textAlign: 'center' },
 });
 
-export default function Home({ navigation }) {
+export default function Home({ navigation, route }) {
 	const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-	const productCardWidth = windowWidth * 0.335;
+	const productCardWidth = Math.min(184, Math.max(154, windowWidth * 0.43));
 	const [fontsLoaded] = useFonts({
 		Lalezar_400Regular: require('@expo-google-fonts/lalezar/400Regular/Lalezar_400Regular.ttf'),
 		LilitaOne_400Regular: require('@expo-google-fonts/lilita-one/400Regular/LilitaOne_400Regular.ttf'),
@@ -294,10 +425,51 @@ export default function Home({ navigation }) {
 	const [searchText, setSearchText] = useState('');
 	const [selectedCategories, setSelectedCategories] = useState(['HortiFruti']);
 	const [priceSortDirection, setPriceSortDirection] = useState(null);
+	const [promoBanners, setPromoBanners] = useState([]);
+	const [products, setProducts] = useState(initialProducts);
 	const [favoriteIds, setFavoriteIds] = useState([]);
 	const [cartProductIds, setCartProductIds] = useState([]);
 	const pendingCartProductIds = useRef(new Set());
 	const filterSheetTranslateY = useRef(new Animated.Value(0)).current;
+	const promoBannerWidth = Math.max(0, windowWidth - 36);
+
+	useEffect(() => {
+		if (route?.params?.categoria) {
+			setSelectedCategories([route.params.categoria]);
+		}
+	}, [route?.params?.categoria]);
+
+	useEffect(() => {
+		const bannersQuery = query(
+			collection(db, 'banners'),
+			where('ativo', '==', true),
+			orderBy('ordem', 'asc'),
+		);
+		return onSnapshot(
+			bannersQuery,
+			(snapshot) => {
+				setPromoBanners(snapshot.docs
+					.map((document) => ({ id: document.id, ...document.data() }))
+					.filter((banner) => typeof banner.imageUrl === 'string' && banner.imageUrl.length > 0));
+			},
+			(error) => {
+				console.error('Não foi possível carregar os banners promocionais.', error);
+			},
+		);
+	}, []);
+
+	useEffect(() => onSnapshot(
+		collection(db, 'products'),
+		(snapshot) => {
+			const mergedProducts = new Map(initialProducts.map((product) => [product.id, product]));
+			snapshot.docs.forEach((productDocument) => {
+				const product = mapStoredProduct(productDocument);
+				if (product) mergedProducts.set(product.id, product);
+			});
+			setProducts([...mergedProducts.values()]);
+		},
+		(error) => console.error('Não foi possível carregar os produtos cadastrados.', error),
+	), []);
 	const filterSheetPanResponder = useMemo(() => PanResponder.create({
 		onMoveShouldSetPanResponder: (_, gestureState) => (
 			gestureState.dy > 5 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx)
@@ -457,6 +629,11 @@ export default function Home({ navigation }) {
 					: currentIds.includes(product.id) ? currentIds : [...currentIds, product.id]
 			));
 			publishSacolaCount(nextItems);
+			showGlobalNotification(
+				isInCart
+					? `${product.name} removido da sacola`
+					: `${product.name} adicionado à sacola`
+			);
 		} catch (error) {
 			console.error('Erro ao atualizar a sacola:', error);
 			Alert.alert('Sacola', `Não foi possível ${isInCart ? 'remover o produto da' : 'adicionar o produto à'} sacola.`);
@@ -469,6 +646,14 @@ export default function Home({ navigation }) {
 		try {
 			const result = await toggleFavorite(productId);
 			setFavoriteIds(result.favoriteIds);
+			const product = products.find((item) => item.id === productId);
+			if (product) {
+				showGlobalNotification(
+					result.isFavorite
+						? `${product.name} salvo nos favoritos`
+						: `${product.name} removido dos favoritos`
+				);
+			}
 		} catch {
 			Alert.alert('Favoritos', 'Não foi possível atualizar seus favoritos.');
 		}
@@ -515,6 +700,32 @@ export default function Home({ navigation }) {
 			: selectedCategories.some((category) => (
 				normalizeSearchText(category) === normalizeSearchText(option.category)
 			));
+	}
+
+	function handleBannerPress(banner) {
+		const productId = banner.productId || banner.produtoId || banner.link;
+		const matchingProduct = products.find((product) => String(product.id) === String(productId));
+		if (matchingProduct) {
+			navigation.navigate('TelaDetalheProduto', { productId: matchingProduct.id });
+			return;
+		}
+
+		if (banner.categoryId) {
+			const matchingCategory = categories.find((category) => (
+				normalizeSearchText(category) === normalizeSearchText(String(banner.categoryId))
+			));
+			if (matchingCategory) {
+				setSelectedCategories([matchingCategory]);
+				return;
+			}
+		}
+
+		if (typeof banner.link === 'string' && /^https?:\/\//i.test(banner.link)) {
+			Linking.openURL(banner.link).catch((error) => {
+				console.error('Não foi possível abrir o link do banner.', error);
+				Alert.alert('Banner promocional', 'Não foi possível abrir o link.');
+			});
+		}
 	}
 
 	return (
@@ -612,20 +823,12 @@ export default function Home({ navigation }) {
 				</View>
 				{!isSearching && (
 					<>
-						<View style={styles.bannerRow}>
-							<View style={[styles.banner, styles.bannerWide]} />
-							<View style={styles.banner} />
-						</View>
+						<BannerCarousel
+							banners={promoBanners}
+							width={promoBannerWidth}
+							onBannerPress={handleBannerPress}
+						/>
 						<ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesRow}>
-							<TouchableOpacity
-								style={styles.categoryFilter}
-								onPress={() => setIsFilterModalVisible(true)}
-								activeOpacity={0.8}
-								accessibilityRole="button"
-								accessibilityLabel="Abrir filtros de produtos"
-							>
-								<Feather name="sliders" size={17} color={colors.white} />
-							</TouchableOpacity>
 							{filterOptions.map((option) => (
 								<TouchableOpacity
 									key={option.name}
@@ -641,6 +844,15 @@ export default function Home({ navigation }) {
 									</Text>
 								</TouchableOpacity>
 							))}
+							<TouchableOpacity
+								style={styles.categoryFilter}
+								onPress={() => setIsFilterModalVisible(true)}
+								activeOpacity={0.8}
+								accessibilityRole="button"
+								accessibilityLabel="Abrir filtros de produtos"
+							>
+								<Feather name="sliders" size={17} color={colors.white} />
+							</TouchableOpacity>
 						</ScrollView>
 					</>
 				)}
@@ -755,8 +967,8 @@ export default function Home({ navigation }) {
 									accessibilityLabel={`Filtrar por ${item.name}`}
 								>
 									<MaterialCommunityIcons
-										name={item.type === 'price' && priceSortDirection === 'descending'
-											? 'sort-descending'
+										name={item.type === 'price' && priceSortDirection !== null
+											? priceSortDirection === 'ascending' ? 'arrow-up' : 'arrow-down'
 											: item.icon}
 										size={34}
 										color={colors.green}
@@ -800,7 +1012,6 @@ const styles = StyleSheet.create({
 		zIndex: 1,
 		elevation: 2,
 	},
-
 	header: {
 		height: 140,
 		backgroundColor: '#194B38',
@@ -919,13 +1130,13 @@ const styles = StyleSheet.create({
 	},
 
 	searchBox: {
-		height: 43,
+		height: 48,
 		marginHorizontal: 18,
-		borderRadius: 20,
-		backgroundColor: '#dfe2e2',
+		borderRadius: 15,
+		backgroundColor: '#E5EAE8',
 		flexDirection: 'row',
 		alignItems: 'center',
-		paddingHorizontal: 11,
+		paddingHorizontal: 14,
 	},
 	searchIcon: {
 		marginRight: 7,
@@ -933,30 +1144,77 @@ const styles = StyleSheet.create({
 	searchInput: {
 		flex: 1,
 		fontFamily: 'Montserrat_400Regular',
-		fontSize: 10,
+		fontSize: 13,
 		color: colors.ink,
 		paddingVertical: 0,
 	},
-	bannerRow: {
+	promoCarousel: {
+		marginTop: 12,
+		marginHorizontal: 18,
+	},
+	promoEmptyState: {
+		minHeight: 116,
+		paddingHorizontal: 20,
+		paddingVertical: 18,
+		borderRadius: 16,
+		backgroundColor: colors.green,
 		flexDirection: 'row',
-		gap: 7,
-		marginTop: 8,
-		paddingLeft: 18,
+		alignItems: 'center',
+		gap: 16,
+	},
+	promoEmptyIcon: {
+		width: 54,
+		height: 54,
+		borderRadius: 16,
+		alignItems: 'center',
+		justifyContent: 'center',
+		backgroundColor: '#2B6654',
+	},
+	promoEmptyCopy: {
+		flex: 1,
+	},
+	promoEmptyTitle: {
+		color: colors.white,
+		fontFamily: 'Montserrat_700Bold',
+		fontSize: 16,
+	},
+	promoEmptyDescription: {
+		marginTop: 5,
+		color: '#D5E9E1',
+		fontFamily: 'Montserrat_400Regular',
+		fontSize: 12,
+	},
+	promoBanner: {
+		minHeight: 120,
+		alignItems: 'center',
+		justifyContent: 'center',
 		overflow: 'hidden',
 	},
-	banner: {
-		height: 83,
-		width: 112,
-		borderRadius: 14,
-		backgroundColor: '#d7d8d8',
+	promoBannerImage: {
+		width: '100%',
+		height: '100%',
 	},
-	bannerWide: {
-		width: 143,
+	promoDots: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		justifyContent: 'center',
+		gap: 6,
+		marginTop: 8,
+	},
+	promoDot: {
+		width: 6,
+		height: 6,
+		borderRadius: 3,
+		backgroundColor: '#B8C0BD',
+	},
+	promoDotActive: {
+		width: 16,
+		backgroundColor: colors.green,
 	},
 	categoriesRow: {
-		paddingHorizontal: 15,
-		gap: 9,
-		paddingVertical: 10,
+		paddingHorizontal: 18,
+		gap: 8,
+		paddingVertical: 12,
 		alignItems: 'center',
 	},
 	categoryFilter: {
@@ -1051,10 +1309,10 @@ const styles = StyleSheet.create({
 	},
 	category: {
 		backgroundColor: colors.green,
-		paddingHorizontal: 12,
-		height: 36,
+		paddingHorizontal: 14,
+		height: 38,
 		justifyContent: 'center',
-		borderRadius: 20,
+		borderRadius: 12,
 	},
 	selectedCategory: {
 		backgroundColor: '#40B190',
@@ -1062,7 +1320,7 @@ const styles = StyleSheet.create({
 	categoryText: {
 		color: colors.white,
 		fontFamily: 'Montserrat_700Bold',
-		fontSize: 14,
+		fontSize: 12,
 	},
 
 	scrollContent: {
@@ -1086,59 +1344,61 @@ const styles = StyleSheet.create({
 		marginTop: 14,
 	},
 	section: {
-		marginTop: 2,
+		marginTop: 8,
 	},
 	sectionHeader: {
 		flexDirection: 'row',
 		alignItems: 'center',
 		justifyContent: 'space-between',
 		paddingHorizontal: 18,
-		marginBottom: 6,
+		marginBottom: 9,
 	},
 	sectionTitle: {
 		color: colors.ink,
 		fontFamily: 'LilitaOne_400Regular',
-		fontSize: 14,
+		fontSize: 18,
 	},
 	seeAll: {
 		color: '#656f6c',
 		fontFamily: 'Montserrat_400Regular',
-		fontSize: 9,
+		fontSize: 11,
 	},
 	productsRow: {
-		gap: 7,
+		gap: 10,
 		paddingHorizontal: 18,
-		paddingBottom: 10,
+		paddingBottom: 12,
 	},
 	productCard: {
-		width: 145,
-		minHeight: 180,
-		padding: 7,
+		width: 165,
+		minHeight: 232,
+		padding: 10,
 		backgroundColor: '#FFFFFF',
-		borderRadius: 25,
+		borderRadius: 14,
+		borderWidth: StyleSheet.hairlineWidth,
+		borderColor: '#E1E7E4',
 	},
 	productMain: {
 		flex: 1,
 	},
 	productImage: {
-		height: 61,
-		backgroundColor: '#FFFFFF',
-		borderRadius: 7,
+		height: 96,
+		backgroundColor: '#F7F9F8',
+		borderRadius: 10,
 		alignItems: 'center',
 		justifyContent: 'center',
 		overflow: 'hidden',
 	},
 	productImageContent: {
-		width: '68%',
+		width: '76%',
 		height: '100%',
 	},
 	heartButton: {
 		position: 'absolute',
-		right: 3,
-		top: 3,
-		width: 20,
-		height: 20,
-		borderRadius: 10,
+		right: 5,
+		top: 5,
+		width: 28,
+		height: 28,
+		borderRadius: 14,
 		backgroundColor: '#d7ece4',
 		alignItems: 'center',
 		justifyContent: 'center',
@@ -1155,6 +1415,7 @@ const styles = StyleSheet.create({
 		fontFamily: 'Montserrat_500Medium',
 		fontSize: 6,
 		paddingHorizontal: 3,
+		paddingVertical: 2,
 		borderRadius: 3,
 	},
 	productName: {
@@ -1186,8 +1447,8 @@ const styles = StyleSheet.create({
 		marginTop: 1,
 	},
 	addButton: {
-		height: 15,
-		borderRadius: 8,
+		height: 36,
+		borderRadius: 10,
 		backgroundColor: colors.green,
 		flexDirection: 'row',
 		borderWidth: 1,
@@ -1195,16 +1456,16 @@ const styles = StyleSheet.create({
 		alignItems: 'center',
 		justifyContent: 'center',
 		gap: 3,
-		marginTop: 4,
+		marginTop: 8,
 	},
 	addedButton: {
 		backgroundColor: colors.lightGreen,
-		borderColor: '#2E9BFF',
+		borderColor: '#008F5A',
 	},
 	addButtonText: {
 		color: colors.white,
 		fontFamily: 'Montserrat_500Medium',
-		fontSize: 6,
+		fontSize: 9,
 	},
 
 });

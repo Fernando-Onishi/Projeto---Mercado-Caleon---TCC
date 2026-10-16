@@ -17,8 +17,10 @@ import { useFonts } from 'expo-font';
 import Feather from '@expo/vector-icons/Feather';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import NavegacaoInferior from '../Componentes/NavegacaoInferior';
-import { formatCurrency, PRODUCTS } from '../Config/Produtos';
-import { getFavorites, toggleFavorite } from '../Config/ProdutoStorage';
+import { publishSacolaCount } from '../Componentes/useSacolaCount';
+import { formatCurrency, formatWeight, getProductPrice, PRODUCTS } from '../Config/Produtos';
+import { addProductToCart, getFavorites, toggleFavorite } from '../Config/ProdutoStorage';
+import { showGlobalNotification } from '../Componentes/NotificacaoGlobal';
 
 const palette = {
 	green: '#1b4b3d',
@@ -30,59 +32,72 @@ const palette = {
 	red: '#ff2929',
 };
 
-function FavoriteRow({ item, isOpen, width, onOpen, onDelete, onPress }) {
-	const translateX = useRef(new Animated.Value(isOpen ? -80 : 0)).current;
-	const openRef = useRef(isOpen);
-	const onOpenRef = useRef(onOpen);
-	openRef.current = isOpen;
-	onOpenRef.current = onOpen;
+function FavoriteRow({ item, width, onDelete, onAdd, onPress }) {
+	const translateX = useRef(new Animated.Value(0)).current;
+	const onDeleteRef = useRef(onDelete);
+	const onAddRef = useRef(onAdd);
+	const weightGrams = item.defaultWeightGrams;
+	const currentPrice = getProductPrice(item, weightGrams);
+	const originalPrice = item.originalPricePerKg
+		? getProductPrice({ pricePerKg: item.originalPricePerKg }, weightGrams)
+		: null;
+	onDeleteRef.current = onDelete;
+	onAddRef.current = onAdd;
 
-	useEffect(() => {
+	function resetPosition() {
 		Animated.spring(translateX, {
-			toValue: isOpen ? -80 : 0,
+			toValue: 0,
 			useNativeDriver: true,
 			bounciness: 0,
 			speed: 22,
 		}).start();
-	}, [isOpen, translateX]);
+	}
 
 	const panResponder = useRef(PanResponder.create({
 		onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dx) > 8,
 		onPanResponderGrant: () => translateX.stopAnimation(),
 		onPanResponderMove: (_, gesture) => {
-			const start = openRef.current ? -80 : 0;
-			translateX.setValue(Math.max(-80, Math.min(0, start + gesture.dx)));
+			translateX.setValue(Math.max(-80, Math.min(80, gesture.dx)));
 		},
 		onPanResponderRelease: (_, gesture) => {
-			const shouldOpen = gesture.dx < -30 || (openRef.current && gesture.dx < 30);
-			onOpenRef.current(shouldOpen ? item.id : null);
+			if (gesture.dx <= -60) onDeleteRef.current(item.id);
+			else if (gesture.dx >= 60) onAddRef.current(item);
+			resetPosition();
 		},
-		onPanResponderTerminate: () => onOpenRef.current(null),
+		onPanResponderTerminate: resetPosition,
 	})).current;
 
 	return (
-		<View style={[styles.rowClip, { width }]}>
-			<TouchableOpacity
-				style={styles.deleteAction}
-				onPress={() => onDelete(item.id)}
-				accessibilityRole="button"
-				accessibilityLabel={`Remover ${item.name} dos favoritos`}
-			>
-				<Feather name="trash-2" size={40} color={palette.white} />
-			</TouchableOpacity>
-			<Animated.View
-				style={[styles.favoriteCard, { width, transform: [{ translateX }] }]}
-				{...panResponder.panHandlers}
-			>
-				<TouchableOpacity style={styles.favoriteContent} onPress={onPress} activeOpacity={0.85} accessibilityRole="button">
-					<Image source={{ uri: item.imageUrl }} style={styles.favoriteImage} resizeMode="contain" />
-					<View style={styles.productDetails}>
-						<Text style={styles.productName}>{item.name}</Text>
-						<Text style={styles.currentPrice}>{formatCurrency(item.pricePerKg)}/kg</Text>
-					</View>
-					<Feather name="chevron-right" size={24} color="#111111" />
-				</TouchableOpacity>
-			</Animated.View>
+		<View style={[styles.rowShadow, { width }]}>
+			<View style={styles.rowClip}>
+				<View style={styles.addAction}>
+					<MaterialCommunityIcons name="shopping-outline" size={38} color={palette.white} />
+				</View>
+				<View style={styles.deleteAction}>
+					<Feather name="trash-2" size={40} color={palette.white} />
+				</View>
+				<Animated.View
+					style={[styles.favoriteCard, { width: width + 2, transform: [{ translateX }] }]}
+					{...panResponder.panHandlers}
+				>
+					<TouchableOpacity style={styles.favoriteContent} onPress={onPress} activeOpacity={0.85} accessibilityRole="button">
+						<Image source={{ uri: item.imageUrl }} style={styles.favoriteImage} resizeMode="contain" />
+						<View style={styles.productDetails}>
+							<View style={styles.productTitleRow}>
+								<Text style={styles.productName} numberOfLines={1}>{item.name}</Text>
+								<Text style={styles.productWeight}>{formatWeight(weightGrams)}</Text>
+							</View>
+							<View style={styles.productPriceRow}>
+								<Text style={styles.currentPrice}>{formatCurrency(currentPrice)}</Text>
+								{originalPrice ? (
+									<Text style={styles.originalPrice}>{formatCurrency(originalPrice)}</Text>
+								) : null}
+							</View>
+						</View>
+						<Feather name="chevron-right" size={24} color="#111111" />
+					</TouchableOpacity>
+				</Animated.View>
+			</View>
 		</View>
 	);
 }
@@ -90,12 +105,9 @@ function FavoriteRow({ item, isOpen, width, onOpen, onDelete, onPress }) {
 export default function Favoritos({ navigation }) {
 	const { width } = useWindowDimensions();
 	const [favorites, setFavorites] = useState([]);
-	const [openId, setOpenId] = useState(null);
 	const [fontsLoaded] = useFonts({
+		LuckiestGuy: require('@expo-google-fonts/luckiest-guy/400Regular/LuckiestGuy_400Regular.ttf'),
 		LilitaOne_400Regular: require('@expo-google-fonts/lilita-one/400Regular/LilitaOne_400Regular.ttf'),
-		Montserrat_400Regular: require('@expo-google-fonts/montserrat/400Regular/Montserrat_400Regular.ttf'),
-		Montserrat_500Medium: require('@expo-google-fonts/montserrat/500Medium/Montserrat_500Medium.ttf'),
-		Montserrat_700Bold: require('@expo-google-fonts/montserrat/700Bold/Montserrat_700Bold.ttf'),
 	});
 	useEffect(() => {
 		let active = true;
@@ -116,10 +128,21 @@ export default function Favoritos({ navigation }) {
 	async function removeFavorite(id) {
 		try {
 			await toggleFavorite(id);
+			const removed = favorites.find((item) => item.id === id);
 			setFavorites((items) => items.filter((item) => item.id !== id));
-			if (openId === id) setOpenId(null);
+			if (removed) showGlobalNotification(`${removed.name} removido dos favoritos`);
 		} catch {
 			Alert.alert('Favoritos', 'Não foi possível remover este produto.');
+		}
+	}
+
+	async function addFavoriteToCart(item) {
+		try {
+			const nextItems = await addProductToCart(item, item.defaultWeightGrams);
+			publishSacolaCount(nextItems);
+			showGlobalNotification(`${item.name} adicionado à sacola`);
+		} catch {
+			Alert.alert('Sacola', 'Não foi possível adicionar o produto.');
 		}
 	}
 
@@ -156,9 +179,8 @@ export default function Favoritos({ navigation }) {
 								key={item.id}
 								item={item}
 								width={width - 26}
-								isOpen={openId === item.id}
-								onOpen={setOpenId}
 								onDelete={removeFavorite}
+								onAdd={addFavoriteToCart}
 								onPress={() => navigation.navigate('TelaDetalheProduto', { productId: item.id })}
 							/>
 						))
@@ -204,7 +226,7 @@ const styles = StyleSheet.create({
 		justifyContent: 'center',
 	},
 	title: {
-		marginTop: 14,
+		marginTop: 54,
 		color: '#000000',
 		fontFamily: 'LilitaOne_400Regular',
 		fontSize: 30,
@@ -216,9 +238,8 @@ const styles = StyleSheet.create({
 	listContent: {
 		flexGrow: 1,
 		paddingHorizontal: 13,
-		paddingTop: 10,
+		paddingTop: 0,
 		paddingBottom: 20,
-		gap: 12,
 	},
 	emptyFavorites: {
 		alignItems: 'center',
@@ -232,8 +253,19 @@ const styles = StyleSheet.create({
 		textAlign: 'center',
 		textTransform: 'uppercase',
 	},
+	rowShadow: {
+		alignSelf: 'stretch',
+		marginBottom: 12,
+		borderRadius: 13,
+		backgroundColor: palette.white,
+		shadowColor: '#000000',
+		shadowOffset: { width: 0, height: 3 },
+		shadowOpacity: 0.24,
+		shadowRadius: 6,
+		elevation: 6,
+	},
 	rowClip: {
-		height: 85,
+		height: 78,
 		borderRadius: 13,
 		backgroundColor: palette.red,
 		overflow: 'hidden',
@@ -248,50 +280,77 @@ const styles = StyleSheet.create({
 		alignItems: 'center',
 		justifyContent: 'center',
 	},
+	addAction: {
+		position: 'absolute',
+		top: 0,
+		left: 0,
+		bottom: 0,
+		width: 80,
+		backgroundColor: palette.mint,
+		alignItems: 'center',
+		justifyContent: 'center',
+	},
 	favoriteCard: {
 		position: 'absolute',
 		top: 0,
 		bottom: 0,
-		left: 0,
+		left: -1,
 		backgroundColor: palette.white,
-		borderRadius: 13,
+		borderRadius: 0,
 		overflow: 'hidden',
-		elevation: 3,
-		shadowColor: '#000000',
-		shadowOpacity: 0.2,
-		shadowRadius: 2,
-		shadowOffset: { width: 0, height: 2 },
 	},
 	favoriteImage: {
-		width: 60,
-		height: 60,
-		marginRight: 11,
+		width: 58,
+		height: 58,
+		marginRight: 10,
 	},
 	favoriteContent: {
 		flex: 1,
 		flexDirection: 'row',
 		alignItems: 'center',
-		paddingHorizontal: 14,
-	},
-	appleImage: {
-		width: 58,
-		fontSize: 30,
-		letterSpacing: -15,
-		marginRight: 10,
+		paddingHorizontal: 12,
 	},
 	productDetails: {
 		flex: 1,
 	},
+	productTitleRow: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		flexWrap: 'wrap',
+		gap: 4,
+	},
 	productName: {
-		color: '#236d47',
-		fontFamily: 'Montserrat_700Bold',
-		fontSize: 18,
-		lineHeight: 22,
+		color: '#1b6848',
+		fontFamily: 'LuckiestGuy',
+		fontSize: 19,
+		lineHeight: 23,
+	},
+	productWeight: {
+		color: palette.white,
+		backgroundColor: palette.mint,
+		borderRadius: 10,
+		overflow: 'hidden',
+		paddingHorizontal: 8,
+		paddingVertical: 3,
+		fontFamily: 'LilitaOne_400Regular',
+		fontSize: 14,
+	},
+	productPriceRow: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: 5,
+		marginTop: 0,
 	},
 	currentPrice: {
 		color: palette.price,
+		fontFamily: 'LuckiestGuy',
+		fontSize: 16,
+		lineHeight: 20,
+	},
+	originalPrice: {
+		color: palette.muted,
 		fontFamily: 'LilitaOne_400Regular',
-		fontSize: 14,
-		lineHeight: 18,
+		fontSize: 11,
+		textDecorationLine: 'line-through',
 	},
 });
