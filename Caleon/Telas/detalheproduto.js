@@ -16,8 +16,11 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import NavegacaoInferior from '../Componentes/NavegacaoInferior';
 import { publishSacolaCount } from '../Componentes/useSacolaCount';
 import BotaoSacola from '../Componentes/BotaoSacola';
-import { formatCurrency, formatWeight, getProductById, getProductPrice, PRODUCTS } from '../Config/Produtos';
+import { formatCurrency, formatProductUnit, formatWeight, getProductById, getProductPrice, PRODUCTS } from '../Config/Produtos';
 import { addProductToCart, getFavorites, toggleFavorite } from '../Config/ProdutoStorage';
+import { showGlobalNotification } from '../Componentes/NotificacaoGlobal';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from '../Config/FireBaseConfig';
 
 const COLORS = {
 	dark: '#1B4B3D',
@@ -92,7 +95,11 @@ function SimilarProductCard({ product, onPress, onFavorite, onAdd, isFavorite })
 }
 
 export default function DetalheProduto({ navigation, route }) {
-	const product = getProductById(route?.params?.productId) || PRODUCTS[0];
+	const productId = String(route?.params?.productId || '');
+	const [storedProduct, setStoredProduct] = useState(null);
+	const [storedProductReady, setStoredProductReady] = useState(false);
+	const isStoredProduct = Boolean(productId && !getProductById(productId));
+	const product = storedProduct || getProductById(productId) || PRODUCTS[0];
 	const [fontsLoaded] = useFonts({
 		LilitaOne_400Regular: require('@expo-google-fonts/lilita-one/400Regular/LilitaOne_400Regular.ttf'),
 		Montserrat_400Regular: require('@expo-google-fonts/montserrat/400Regular/Montserrat_400Regular.ttf'),
@@ -107,6 +114,45 @@ export default function DetalheProduto({ navigation, route }) {
 		() => PRODUCTS.filter((item) => item.id !== product.id && item.category === product.category),
 		[product.id, product.category],
 	);
+
+	useEffect(() => {
+		if (!productId || getProductById(productId)) {
+			setStoredProduct(null);
+			setStoredProductReady(true);
+			return undefined;
+		}
+		setStoredProduct(null);
+		setStoredProductReady(false);
+		return onSnapshot(doc(db, 'products', productId), (snapshot) => {
+			if (!snapshot.exists()) {
+				setStoredProduct(null);
+				setStoredProductReady(true);
+				return;
+			}
+			const data = snapshot.data();
+			const defaultWeightGrams = Number(data.defaultWeightGrams);
+			const pricePerKg = Number(data.pricePerKg);
+			if (data.active !== true || !data.name || defaultWeightGrams <= 0 || pricePerKg <= 0) {
+				setStoredProduct(null);
+				setStoredProductReady(true);
+				return;
+			}
+			setStoredProduct({
+				...data,
+				id: snapshot.id,
+				defaultWeightGrams,
+				pricePerKg,
+				originalPricePerKg: Number(data.originalPricePerKg) > pricePerKg ? Number(data.originalPricePerKg) : null,
+				availableWeights: Array.isArray(data.availableWeights) && data.availableWeights.length
+					? data.availableWeights.map(Number).filter((weight) => Number.isFinite(weight) && weight > 0)
+					: [defaultWeightGrams],
+			});
+			setStoredProductReady(true);
+		}, (error) => {
+			console.error('Não foi possível carregar o produto cadastrado.', error);
+			setStoredProductReady(true);
+		});
+	}, [productId]);
 
 	useEffect(() => {
 		setSelectedWeight(product.defaultWeightGrams);
@@ -126,12 +172,30 @@ export default function DetalheProduto({ navigation, route }) {
 		};
 	}, [navigation]);
 
-	if (!fontsLoaded) return null;
+	if (!fontsLoaded || (isStoredProduct && !storedProductReady)) return null;
+	if (isStoredProduct && !storedProduct) {
+		return (
+			<SafeAreaView style={styles.safeArea}>
+				<View style={styles.topBand} />
+				<View style={[styles.screen, styles.unavailableProduct]}>
+					<Text style={styles.sectionTitle}>Produto indisponível</Text>
+					<TouchableOpacity style={styles.unavailableBack} onPress={() => navigation.goBack()} accessibilityRole="button">
+						<Text style={styles.unavailableBackText}>Voltar</Text>
+					</TouchableOpacity>
+				</View>
+			</SafeAreaView>
+		);
+	}
 
 	async function handleFavorite(productId) {
 		try {
 			const result = await toggleFavorite(productId);
 			setFavoriteIds(result.favoriteIds);
+			showGlobalNotification(
+				result.isFavorite
+					? `${product.name} salvo nos favoritos`
+					: `${product.name} removido dos favoritos`
+			);
 		} catch {
 			Alert.alert('Favoritos', 'Não foi possível atualizar seus favoritos.');
 		}
@@ -141,13 +205,14 @@ export default function DetalheProduto({ navigation, route }) {
 		try {
 			const nextItems = await addProductToCart(productToAdd, weightGrams);
 			publishSacolaCount(nextItems);
-			Alert.alert('Sacola', `${productToAdd.name} adicionado à sacola.`);
+			showGlobalNotification(`${productToAdd.name} adicionado à sacola`);
 		} catch {
 			Alert.alert('Sacola', 'Não foi possível adicionar o produto.');
 		}
 	}
 
 	function selectExtraWeight() {
+		if (product.unitBase && product.unitBase !== 'g') return;
 		const available = [...BASE_WEIGHTS, ...EXTRA_WEIGHTS]
 			.filter((weight) => !product.availableWeights.includes(weight));
 		if (available.length === 0) return;
@@ -199,24 +264,24 @@ export default function DetalheProduto({ navigation, route }) {
 								<MaterialCommunityIcons name={favoriteIds.includes(product.id) ? 'heart' : 'heart-outline'} size={23} color={favoriteIds.includes(product.id) ? COLORS.red : COLORS.white} />
 							</TouchableOpacity>
 						</View>
-						<Text style={styles.averageWeight}>Aprox. {product.averageWeightGrams}g/cada</Text>
+						<Text style={styles.averageWeight}>{product.unitBase && product.unitBase !== 'g' ? `Venda por ${product.unit}` : `Aprox. ${product.averageWeightGrams}g/cada`}</Text>
 						<View style={styles.priceRow}>
-							<Text style={styles.mainPrice}>{formatCurrency(product.pricePerKg)}<Text style={styles.priceUnit}>/kg</Text></Text>
+							<Text style={styles.mainPrice}>{formatCurrency(product.pricePerKg)}<Text style={styles.priceUnit}>/{product.unitBase && product.unitBase !== 'g' ? product.unit : 'kg'}</Text></Text>
 							{product.originalPricePerKg && (
 								<Text style={styles.originalPrice}>
-									{formatCurrency(product.originalPricePerKg)}/kg
+									{formatCurrency(product.originalPricePerKg)}/{product.unitBase && product.unitBase !== 'g' ? product.unit : 'kg'}
 								</Text>
 							)}
 						</View>
 						{product.originalPricePerKg && (
 							<Text style={styles.savings}>
-								Economize {formatCurrency(product.originalPricePerKg - product.pricePerKg)} por kg
+								Economize {formatCurrency(product.originalPricePerKg - product.pricePerKg)} por {product.unitBase && product.unitBase !== 'g' ? product.unit : 'kg'}
 							</Text>
 						)}
 					</View>
 
 					<View style={styles.weightSection}>
-						<Text style={styles.weightHeading}>Selecione o peso:</Text>
+						<Text style={styles.weightHeading}>{product.unitBase && product.unitBase !== 'g' ? 'Unidade de venda:' : 'Selecione o peso:'}</Text>
 						<View style={styles.weightOptions}>
 							{product.availableWeights.slice(0, 4).map((weight) => {
 								const selected = selectedWeight === weight;
@@ -228,13 +293,15 @@ export default function DetalheProduto({ navigation, route }) {
 										accessibilityRole="button"
 										accessibilityState={{ selected }}
 									>
-										<Text style={[styles.weightText, selected && styles.selectedWeightText]}>{formatWeight(weight)}</Text>
+										<Text style={[styles.weightText, selected && styles.selectedWeightText]}>{formatProductUnit(product, weight)}</Text>
 									</TouchableOpacity>
 								);
 							})}
-							<TouchableOpacity style={styles.moreWeight} onPress={selectExtraWeight} accessibilityRole="button" accessibilityLabel="Mais opções de peso">
-								<Feather name="plus" size={19} color={COLORS.dark} />
-							</TouchableOpacity>
+							{(!product.unitBase || product.unitBase === 'g') && (
+								<TouchableOpacity style={styles.moreWeight} onPress={selectExtraWeight} accessibilityRole="button" accessibilityLabel="Mais opções de peso">
+									<Feather name="plus" size={19} color={COLORS.dark} />
+								</TouchableOpacity>
+							)}
 						</View>
 					</View>
 
@@ -289,6 +356,9 @@ const styles = StyleSheet.create({
 		backgroundColor: COLORS.background,
 		overflow: 'hidden',
 	},
+	unavailableProduct: { alignItems: 'center', justifyContent: 'center', padding: 24 },
+	unavailableBack: { marginTop: 12, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8, backgroundColor: COLORS.mint },
+	unavailableBackText: { color: COLORS.white, fontFamily: 'LilitaOne_400Regular', fontSize: 16 },
 	header: {
 		height: 58,
 		paddingHorizontal: 16,

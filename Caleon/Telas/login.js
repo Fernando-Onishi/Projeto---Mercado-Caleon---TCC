@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { useFonts } from 'expo-font';
 import EvilIcons from '@expo/vector-icons/EvilIcons';
 import Fontisto from '@expo/vector-icons/Fontisto';
-import { sendPasswordResetEmail, signInWithEmailAndPassword } from 'firebase/auth';
+import Feather from '@expo/vector-icons/Feather';
+import { sendPasswordResetEmail, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import {
 	Alert,
 	Image,
@@ -19,6 +20,7 @@ import {
 	View,
 } from 'react-native';
 import { auth } from '../Config/FireBaseConfig';
+import { getHomeRouteByRole, getUserRole } from '../src/utils/getUserRole';
 
 export default function TelaLogin({ navigation }) {
 	const { width: screenWidth, height: screenHeight } = useWindowDimensions();
@@ -53,10 +55,20 @@ export default function TelaLogin({ navigation }) {
 
 		setFeedback(null);
 		setIsSubmitting(true);
+		let authenticatedUser = null;
 		try {
-			await signInWithEmailAndPassword(auth, email.trim(), password);
-			navigation.replace('TelaSplash');
+			const credential = await signInWithEmailAndPassword(auth, email.trim(), password);
+			authenticatedUser = credential.user;
+			const role = await getUserRole(credential.user);
+			navigation.replace(getHomeRouteByRole(role));
 		} catch (error) {
+			if (authenticatedUser) {
+				try {
+					await signOut(auth);
+				} catch (signOutError) {
+					console.error('Não foi possível encerrar a sessão após falha ao carregar o perfil.', signOutError);
+				}
+			}
 			const messages = {
 				'auth/invalid-credential': 'E-mail ou senha incorretos.',
 				'auth/invalid-login-credentials': 'E-mail ou senha incorretos.',
@@ -67,6 +79,7 @@ export default function TelaLogin({ navigation }) {
 				'auth/operation-not-allowed': 'O login por e-mail ainda não está habilitado.',
 				'auth/network-request-failed': 'Sem conexão com a internet. Tente novamente.',
 				'auth/too-many-requests': 'Muitas tentativas. Aguarde e tente novamente.',
+				'permission-denied': 'Não foi possível carregar seu perfil. Verifique sua conexão ou tente novamente.',
 			};
 			setFeedback({ type: 'error', message: messages[error.code] || 'Não foi possível entrar. Tente novamente.' });
 		} finally {
@@ -111,6 +124,16 @@ export default function TelaLogin({ navigation }) {
 						showsVerticalScrollIndicator={false}
 					>
 						<View style={[styles.brandArea, { minHeight: brandMinHeight }]}>
+							<TouchableOpacity
+								style={styles.stockPreviewButton}
+								activeOpacity={0.85}
+								onPress={() => navigation.navigate('AdminPainelPreview')}
+								accessibilityRole="button"
+								accessibilityLabel="Acessar painel administrativo temporário"
+							>
+								<Feather name="grid" size={16} color="#1B4B3D" />
+								<Text style={styles.stockPreviewText}>Painel admin (teste)</Text>
+							</TouchableOpacity>
 							<TouchableOpacity
 								style={styles.helpButton}
 								activeOpacity={0.8}
@@ -379,6 +402,26 @@ const styles = StyleSheet.create({
 		color: '#1B4B3D',
 		fontFamily: 'MontserratRegular',
 		fontSize: 13,
+	},
+	stockPreviewButton: {
+		position: 'absolute',
+		top: 12,
+		left: 16,
+		minHeight: 36,
+		paddingHorizontal: 10,
+		flexDirection: 'row',
+		alignItems: 'center',
+		justifyContent: 'center',
+		gap: 8,
+		borderRadius: 8,
+		backgroundColor: '#FFFFFF',
+		zIndex: 2,
+		elevation: 4,
+	},
+	stockPreviewText: {
+		color: '#1B4B3D',
+		fontFamily: 'MontserratSemiBold',
+		fontSize: 11,
 	},
 	termsContainer: {
 		width: '100%',

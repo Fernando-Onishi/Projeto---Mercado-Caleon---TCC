@@ -5,6 +5,13 @@
     "version": "1.0.0",
     "plugins": [
       "expo-font"
-    ]
+    ],
+    "android": {
+      "package": "com.caleon.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/logoRedimensionada.png",
+        "backgroundColor": "#1B4B3D"
+      }
+    }
   }
 }

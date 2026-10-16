@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { formatWeight, getProductPrice } from './Produtos';
+import { formatProductUnit, getProductPrice } from './Produtos';
 
 export const CART_STORAGE_KEY = '@sacola_itens';
 export const FAVORITES_STORAGE_KEY = '@caleon_favorites';
@@ -57,6 +57,7 @@ export async function addProductToCart(product, weightGrams) {
 			? { ...item, quantidade: (Number(item.quantidade) || 1) + 1 }
 			: item);
 	} else {
+		const productUnit = formatProductUnit(product, weightGrams);
 		const discount = product.originalPricePerKg
 			? `${Math.round((1 - product.pricePerKg / product.originalPricePerKg) * 100)}% OFF`
 			: null;
@@ -65,8 +66,8 @@ export async function addProductToCart(product, weightGrams) {
 			productId: product.id,
 			nome: product.name,
 			preco: price,
-			unidade: `/${formatWeight(weightGrams)}`,
-			peso: formatWeight(weightGrams),
+			unidade: `/${productUnit}`,
+			peso: productUnit,
 			pesoGramas: weightGrams,
 			quantidade: 1,
 			imagem: { uri: product.imageUrl },

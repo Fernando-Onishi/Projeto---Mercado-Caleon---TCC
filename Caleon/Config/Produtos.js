@@ -51,3 +51,9 @@ export function formatWeight(grams) {
 		? `${Number((grams / 1000).toFixed(1))} kg`
 		: `${grams}g`;
 }
+
+export function formatProductUnit(product, amount = product.defaultWeightGrams) {
+	return product.unitBase && product.unitBase !== 'g'
+		? (product.unit || 'Unidade')
+		: formatWeight(amount);
+}
