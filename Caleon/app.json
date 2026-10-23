@@ -10,7 +10,12 @@
       "package": "com.caleon.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/logoRedimensionada.png",
-        "backgroundColor": "#1B4B3D"
+        "backgroundImage": "./assets/fundoRedimensionado.png"
+      }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "7c389d66-6109-4d7f-8fca-c2453e6baf58"
       }
     }
   }

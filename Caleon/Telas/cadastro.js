@@ -5,8 +5,10 @@ import FontAwesome from '@expo/vector-icons/FontAwesome';
 import Fontisto from '@expo/vector-icons/Fontisto';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useWindowDimensions } from 'react-native';
 import { auth, db } from '../Config/FireBaseConfig';
+import { CART_STORAGE_KEY } from '../Config/ProdutoStorage';
 import { getHomeRouteByRole } from '../src/utils/getUserRole';
 import { getRoleByEmail } from '../src/utils/getRoleByEmail';
 import {
@@ -96,6 +98,13 @@ export default function TelaCadastro({ navigation }) {
 			const role = getRoleByEmail(normalizedEmail);
 			let profileUpdateFailed = false;
 			let userDocumentSaveFailed = false;
+			let cartResetFailed = false;
+			try {
+				await AsyncStorage.setItem(CART_STORAGE_KEY, JSON.stringify([]));
+			} catch (error) {
+				console.error('Não foi possível iniciar a sacola vazia.', error);
+				cartResetFailed = true;
+			}
 			try {
 				await updateProfile(credential.user, { displayName: name.trim() });
 			} catch {
@@ -114,10 +123,11 @@ export default function TelaCadastro({ navigation }) {
 				userDocumentSaveFailed = true;
 			}
 			navigation.replace(getHomeRouteByRole(role));
-			if (profileUpdateFailed || userDocumentSaveFailed) {
+			if (profileUpdateFailed || userDocumentSaveFailed || cartResetFailed) {
 				const warnings = [];
 				if (profileUpdateFailed) warnings.push('não foi possível salvar o nome no perfil');
 				if (userDocumentSaveFailed) warnings.push('não foi possível salvar os dados do perfil no Firestore');
+				if (cartResetFailed) warnings.push('não foi possível iniciar a sacola vazia');
 				Alert.alert('Cadastro concluído', `Sua conta foi criada, mas ${warnings.join(' e ')}.`);
 			}
 		} catch (error) {

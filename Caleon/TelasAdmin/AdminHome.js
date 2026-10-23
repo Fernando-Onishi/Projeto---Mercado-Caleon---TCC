@@ -1,12 +1,21 @@
 import React, { useMemo, useState } from 'react';
 import {
-  Alert, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View,
+  ActivityIndicator, Alert, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Feather from '@expo/vector-icons/Feather';
-import NavegacaoAdmin from '../Componentes/NavegacaoAdmin';
+import { signOut } from 'firebase/auth';
+import { auth } from '../Config/FireBaseConfig';
 
-const C = { green: '#1B4B3D', mint: '#40B190', bg: '#F1F3F5', white: '#FFFFFF', ink: '#183F35', muted: '#7A8581', success: '#00AA6A', red: '#FF383C' };
+const C = { green: '#1B4B3D', mint: '#40B190', active: '#076653', bg: '#F1F3F5', white: '#FFFFFF', ink: '#183F35', muted: '#7A8581', success: '#00AA6A', red: '#FF383C' };
+
+const adminTabs = [
+  { label: 'Início', icon: 'home', route: 'AdminHome' },
+  { label: 'QrCode', icon: 'maximize', route: 'AdminQrCode' },
+  { label: 'Adicionar', icon: 'plus', route: 'AdminCriarProduto' },
+  { label: 'Catálogo', icon: 'clipboard', route: 'AdminProdutos' },
+  { label: 'Configurações', icon: 'settings', route: 'AdminConfiguracoes' },
+];
 
 const initialOrders = [
   { id: '897', name: 'Christian Godoi', time: '10:15', status: 'Pendente', total: 7.50 },
@@ -35,6 +44,8 @@ export default function AdminHome({ navigation }) {
   const [period, setPeriod] = useState('Dia');
   const [orders, setOrders] = useState(initialOrders);
   const [accepted, setAccepted] = useState([]);
+  const [activeTab, setActiveTab] = useState('Início');
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const data = useMemo(() => ({
     Dia: { revenue: 'R$ 5.420,00', orders: '48', purchases: '36', expenses: 'R$ 2.180,00' },
     Semana: { revenue: 'R$ 32.680,00', orders: '286', purchases: '241', expenses: 'R$ 14.280,00' },
@@ -56,6 +67,31 @@ export default function AdminHome({ navigation }) {
     }
   }
 
+  function handleTabPress(route, label) {
+    const routeNames = navigation.getState()?.routeNames || [];
+    if (!routeNames.includes(route)) {
+      Alert.alert(label, 'Esta tela ainda não está disponível no aplicativo.');
+      return;
+    }
+
+    setActiveTab(label);
+    if (route !== 'AdminHome') navigation.navigate(route);
+  }
+
+  async function handleLogout() {
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+    try {
+      await signOut(auth);
+      navigation.reset({ index: 0, routes: [{ name: 'TelaLogin' }] });
+    } catch (error) {
+      console.error('Não foi possível sair da conta administrativa.', error);
+      Alert.alert('Sair da conta', 'Não foi possível encerrar sua sessão. Tente novamente.');
+    } finally {
+      setIsLoggingOut(false);
+    }
+  }
+
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <StatusBar barStyle="light-content" backgroundColor={C.green} />
@@ -63,6 +99,17 @@ export default function AdminHome({ navigation }) {
         <View style={styles.brandMark}><Text style={styles.brandLetter}>C</Text></View>
         <View style={styles.brandCopy}><Text style={styles.kicker}>CAMELION • PAINEL OPERACIONAL</Text><Text style={styles.greeting}>Olá, Administrador</Text></View>
         <TouchableOpacity style={styles.bell} onPress={() => Alert.alert('Notificações', 'Você tem 3 produtos com estoque baixo e pedidos aguardando.')}><Feather name="bell" size={20} color="#FFFFFF" /><View style={styles.badge}><Text style={styles.badgeText}>1</Text></View></TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.logoutButton, isLoggingOut && styles.disabledButton]}
+          onPress={handleLogout}
+          disabled={isLoggingOut}
+          accessibilityRole="button"
+          accessibilityLabel="Sair da conta"
+        >
+          {isLoggingOut
+            ? <ActivityIndicator size="small" color={C.white} />
+            : <Feather name="log-out" size={18} color={C.white} />}
+        </TouchableOpacity>
       </View>
       <ScrollView style={styles.screen} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.periods}>
@@ -91,7 +138,29 @@ export default function AdminHome({ navigation }) {
           </View>
         ))}
       </ScrollView>
-      <NavegacaoAdmin navigation={navigation} activeTab="Início" />
+      <View style={styles.footer}>
+        {adminTabs.map((tab) => {
+          const selected = tab.label === activeTab;
+          const addTab = tab.label === 'Adicionar';
+          return (
+            <TouchableOpacity
+              key={tab.label}
+              style={styles.tab}
+              onPress={() => handleTabPress(tab.route, tab.label)}
+              accessibilityRole="button"
+              accessibilityState={{ selected }}
+              accessibilityLabel={tab.label}
+            >
+              <View style={[styles.iconBox, addTab && styles.addIconBox]}>
+                <Feather name={tab.icon} size={addTab ? 23 : 20} color={addTab ? C.white : selected ? C.active : C.muted} />
+              </View>
+              <Text style={[styles.tabLabel, selected && styles.selectedLabel, addTab && styles.addLabel]} numberOfLines={1}>
+                {tab.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
     </SafeAreaView>
   );
 }
@@ -105,6 +174,8 @@ const styles = StyleSheet.create({
   kicker: { fontSize: 9, color: '#7DE1C4', fontWeight: '800' },
   greeting: { color: '#FFFFFF', fontWeight: '800', fontSize: 14, marginTop: 2 },
   bell: { width: 36, height: 36, borderRadius: 10, backgroundColor: C.mint, alignItems: 'center', justifyContent: 'center' },
+  logoutButton: { width: 36, height: 36, borderRadius: 10, backgroundColor: C.red, alignItems: 'center', justifyContent: 'center' },
+  disabledButton: { opacity: 0.65 },
   badge: { position: 'absolute', top: -3, right: -3, backgroundColor: C.red, width: 14, height: 14, borderRadius: 7, alignItems: 'center', justifyContent: 'center' },
   badgeText: { color: '#FFFFFF', fontSize: 8, fontWeight: '900' },
   screen: { flex: 1, backgroundColor: C.bg, borderTopLeftRadius: 26, borderTopRightRadius: 26, overflow: 'hidden' },
@@ -144,4 +215,11 @@ const styles = StyleSheet.create({
   rejectButton: { flex: 1, backgroundColor: C.red, borderRadius: 18, alignItems: 'center', paddingVertical: 8 },
   acceptButton: { flex: 1, backgroundColor: C.success, borderRadius: 18, alignItems: 'center', paddingVertical: 8 },
   actionText: { color: '#FFFFFF', fontSize: 10, fontWeight: '800' },
+  footer: { minHeight: 80, paddingHorizontal: 6, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', backgroundColor: C.bg, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#D5D9DB' },
+  tab: { flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center', gap: 3 },
+  iconBox: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  addIconBox: { borderRadius: 8, backgroundColor: '#076653' },
+  tabLabel: { color: C.muted, fontFamily: 'LilitaOne_400Regular', fontSize: 10 },
+  selectedLabel: { color: '#076653' },
+  addLabel: { color: '#076653' },
 });

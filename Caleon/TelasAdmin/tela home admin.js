@@ -22,7 +22,7 @@ import { useFonts } from 'expo-font';
 import Feather from '@expo/vector-icons/Feather';
 import * as ImagePicker from 'expo-image-picker';
 import { collection, doc, serverTimestamp, setDoc } from 'firebase/firestore';
-import { getIdTokenResult } from 'firebase/auth';
+import { getIdTokenResult, signOut } from 'firebase/auth';
 import { deleteObject, getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { auth, db, storage } from '../Config/FireBaseConfig';
 
@@ -134,6 +134,7 @@ export default function TelaHomeAdmin({ navigation }) {
 	const [criticalStock, setCriticalStock] = useState('');
 	const [images, setImages] = useState([]);
 	const [saving, setSaving] = useState(false);
+	const [isSigningOut, setIsSigningOut] = useState(false);
 	const [phase, setPhase] = useState('opening');
 	const translateY = useRef(new Animated.Value(windowHeight)).current;
 	const backdropOpacity = useRef(new Animated.Value(0)).current;
@@ -170,6 +171,35 @@ export default function TelaHomeAdmin({ navigation }) {
 		}
 		close();
 	};
+
+	function confirmSignOut() {
+		if (busyRef.current || isSigningOut) return;
+		Alert.alert(
+			'Sair da conta',
+			dirty
+				? 'Deseja sair da sua conta? Os dados do produto preenchidos serão descartados.'
+				: 'Deseja realmente sair da sua conta?',
+			[
+				{ text: 'Cancelar', style: 'cancel' },
+				{
+					text: 'Sair',
+					style: 'destructive',
+					onPress: async () => {
+						setIsSigningOut(true);
+						try {
+							await signOut(auth);
+							navigation.reset({ index: 0, routes: [{ name: 'TelaLogin' }] });
+						} catch (error) {
+							console.error('Não foi possível sair da conta administrativa.', error);
+							Alert.alert('Sair da conta', 'Não foi possível encerrar sua sessão. Tente novamente.');
+						} finally {
+							setIsSigningOut(false);
+						}
+					},
+				},
+			],
+		);
+	}
 
 	useEffect(() => {
 		const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -371,7 +401,17 @@ export default function TelaHomeAdmin({ navigation }) {
 						</TouchableOpacity>
 						<View style={styles.grabHandle} />
 						<Text style={styles.title}>Criar Produto</Text>
-						<View style={styles.headerSpacer} />
+						<TouchableOpacity
+							style={[styles.logoutButton, isSigningOut && styles.disabledButton]}
+							onPress={confirmSignOut}
+							disabled={isSigningOut || saving}
+							accessibilityRole="button"
+							accessibilityLabel="Sair da conta"
+						>
+							{isSigningOut
+								? <ActivityIndicator color={COLORS.white} size="small" />
+								: <Feather name="log-out" size={17} color={COLORS.white} />}
+						</TouchableOpacity>
 					</View>
 					<ScrollView
 						keyboardShouldPersistTaps="handled"
@@ -446,7 +486,7 @@ const styles = StyleSheet.create({
 	grabHandle: { position: 'absolute', top: 10, width: 81, height: 6, borderRadius: 4, backgroundColor: COLORS.muted },
 	closeButton: { position: 'absolute', left: 16, bottom: 10, zIndex: 1, width: 30, height: 30, borderRadius: 15, backgroundColor: COLORS.red, alignItems: 'center', justifyContent: 'center' },
 	title: { color: COLORS.black, fontFamily: 'LilitaOne_400Regular', fontSize: 24, textAlign: 'center' },
-	headerSpacer: { position: 'absolute', right: 16, bottom: 10, width: 30, height: 30 },
+	logoutButton: { position: 'absolute', right: 16, bottom: 10, zIndex: 1, width: 30, height: 30, borderRadius: 15, backgroundColor: COLORS.red, alignItems: 'center', justifyContent: 'center' },
 	formContent: { paddingHorizontal: 16, paddingBottom: 18, gap: 10 },
 	fieldGroup: { flex: 1, minWidth: 0 },
 	compactFieldGroup: { flex: 1 },

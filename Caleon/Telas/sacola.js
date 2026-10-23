@@ -37,57 +37,6 @@ const DELETE_WIDTH = 80;
 const FAVORITE_WIDTH = 80;
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
-const itensIniciais = [
-  {
-    id: 1,
-    nome: 'Maçã',
-    preco: 7.99,
-    unidade: '/kg',
-    peso: '300g',
-    quantidade: 1,
-    imagem: { uri: 'https://cdn-icons-png.flaticon.com/512/415/415682.png' },
-    desconto: null,
-    precoOriginal: null,
-    favorito: false,
-  },
-  {
-    id: 2,
-    nome: 'Melancia',
-    preco: 6.79,
-    unidade: '/u',
-    peso: null,
-    quantidade: 1,
-    imagem: { uri: 'https://cdn-icons-png.flaticon.com/512/765/765560.png' },
-    desconto: null,
-    precoOriginal: 10.99,
-    favorito: true,
-  },
-  {
-    id: 3,
-    nome: 'Maçã',
-    preco: 7.99,
-    unidade: '/kg',
-    peso: '300g',
-    quantidade: 1,
-    imagem: { uri: 'https://cdn-icons-png.flaticon.com/512/415/415682.png' },
-    desconto: null,
-    precoOriginal: null,
-    favorito: false,
-  },
-  {
-    id: 4,
-    nome: 'Melancia',
-    preco: 7.99,
-    unidade: '/kg',
-    peso: null,
-    quantidade: 1,
-    imagem: { uri: 'https://cdn-icons-png.flaticon.com/512/765/765560.png' },
-    desconto: '40% off',
-    precoOriginal: 10.99,
-    favorito: false,
-  },
-];
-
 function SwipeableCard({ children, onDelete, onFavorite }) {
   const translateX = useRef(new Animated.Value(0)).current;
   const [favoriteCommitted, setFavoriteCommitted] = useState(false);
@@ -231,9 +180,9 @@ export default function TelaSacola({ navigation }) {
         setItens(savedItems);
         publishSacolaCount(savedItems);
       } else {
-        setItens(itensIniciais);
-        await AsyncStorage.setItem(SACOLA_KEY, JSON.stringify(itensIniciais));
-        publishSacolaCount(itensIniciais);
+        setItens([]);
+        await AsyncStorage.setItem(SACOLA_KEY, JSON.stringify([]));
+        publishSacolaCount([]);
       }
     } catch (error) {
       console.error('Erro ao carregar sacola:', error);

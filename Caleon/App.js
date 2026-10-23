@@ -15,9 +15,9 @@ import TelaPerfil from './Telas/Perfil';
 import ProdutosCategoriaScreen from './Telas/ProdutosCategoriaScreen';
 import DetalheProduto from './Telas/detalheproduto';
 import AdminHome from './TelasAdmin/AdminHome';
-import HomeAdmin from './Telas/homeadmin';
 import ControleEstoque from './TelasAdmin/controleEstoque';
 import AdminPedido from './TelasAdmin/AdminPedido';
+import AdminProdutos from './TelasAdmin/AdminProdutos';
 import TelaHomeAdmin from './TelasAdmin/tela home admin';
 import NotificacaoGlobal from './Componentes/NotificacaoGlobal';
 import { getHomeRouteByRole, getUserRole } from './src/utils/getUserRole';
@@ -76,8 +76,8 @@ function AdminOrderRoute({ navigation, route }) {
 	return <RoleProtectedScreen allowedRoles={['admin', 'employee']} Screen={AdminPedido} navigation={navigation} route={route} />;
 }
 
-function AdminPanelPreviewRoute({ navigation }) {
-	return <HomeAdmin navigation={navigation} previewMode />;
+function AdminProductsRoute({ navigation, route }) {
+	return <RoleProtectedScreen allowedRoles={['admin', 'employee']} Screen={AdminProdutos} navigation={navigation} route={route} />;
 }
 
 function ControleEstoqueRoute({ navigation, route }) {
@@ -139,8 +139,8 @@ export default function App() {
 					<Stack.Screen name="TelaPerfil" component={TelaPerfil} />
 					<Stack.Screen name="TelaDetalheProduto" component={DetalheProduto} />
 					<Stack.Screen name="AdminHome" component={AdminHomeRoute} />
-					<Stack.Screen name="AdminPainelPreview" component={AdminPanelPreviewRoute} />
 					<Stack.Screen name="AdminPedido" component={AdminOrderRoute} />
+					<Stack.Screen name="AdminProdutos" component={AdminProductsRoute} />
 					<Stack.Screen name="ControleEstoque" component={ControleEstoqueRoute} />
 					<Stack.Screen
 						name="AdminCriarProduto"

@@ -229,13 +229,6 @@ export default function Perfil({ navigation }) {
 		setIsLogoutModalVisible(true);
 	}
 
-	function explainPasswordVisibility() {
-		Alert.alert(
-			'Senha protegida',
-			'O Firebase não permite visualizar a senha atual. Para mantê-la, deixe o campo de senha em branco ao editar o perfil.',
-		);
-	}
-
 	function goBack() {
 		if (navigation?.canGoBack()) navigation.goBack();
 		else navigation?.navigate('TelaHome');
@@ -330,7 +323,7 @@ export default function Perfil({ navigation }) {
 									accessibilityRole="button"
 									accessibilityLabel="Editar foto do perfil"
 								>
-									<Feather name="edit-2" size={21} color={COLORS.white} />
+									<Feather name="edit-2" size={21} color={COLORS.background} />
 								</TouchableOpacity>
 							) : null}
 						</View>
@@ -349,14 +342,6 @@ export default function Perfil({ navigation }) {
 												<Text style={[styles.input, styles.readOnlyValue]}>
 													{hasPassword ? '••••••••' : 'Não configurada'}
 												</Text>
-												<TouchableOpacity
-													style={styles.passwordVisibilityButton}
-													onPress={explainPasswordVisibility}
-													accessibilityRole="button"
-													accessibilityLabel="Informações sobre a senha protegida"
-												>
-													<Feather name="eye-off" size={20} color={COLORS.muted} />
-												</TouchableOpacity>
 											</View>
 										</View>
 									);
@@ -564,7 +549,7 @@ const styles = StyleSheet.create({
 		height: 49,
 		borderRadius: 25,
 		borderWidth: 4,
-		borderColor: COLORS.white,
+		borderColor: COLORS.background,
 		backgroundColor: COLORS.mint,
 		alignItems: 'center',
 		justifyContent: 'center',

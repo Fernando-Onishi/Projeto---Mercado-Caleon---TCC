@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { useFonts } from 'expo-font';
 import EvilIcons from '@expo/vector-icons/EvilIcons';
 import Fontisto from '@expo/vector-icons/Fontisto';
-import Feather from '@expo/vector-icons/Feather';
 import { sendPasswordResetEmail, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import {
 	Alert,
@@ -124,16 +123,6 @@ export default function TelaLogin({ navigation }) {
 						showsVerticalScrollIndicator={false}
 					>
 						<View style={[styles.brandArea, { minHeight: brandMinHeight }]}>
-							<TouchableOpacity
-								style={styles.stockPreviewButton}
-								activeOpacity={0.85}
-								onPress={() => navigation.navigate('AdminPainelPreview')}
-								accessibilityRole="button"
-								accessibilityLabel="Acessar painel administrativo temporário"
-							>
-								<Feather name="grid" size={16} color="#1B4B3D" />
-								<Text style={styles.stockPreviewText}>Painel admin (teste)</Text>
-							</TouchableOpacity>
 							<TouchableOpacity
 								style={styles.helpButton}
 								activeOpacity={0.8}
@@ -402,26 +391,6 @@ const styles = StyleSheet.create({
 		color: '#1B4B3D',
 		fontFamily: 'MontserratRegular',
 		fontSize: 13,
-	},
-	stockPreviewButton: {
-		position: 'absolute',
-		top: 12,
-		left: 16,
-		minHeight: 36,
-		paddingHorizontal: 10,
-		flexDirection: 'row',
-		alignItems: 'center',
-		justifyContent: 'center',
-		gap: 8,
-		borderRadius: 8,
-		backgroundColor: '#FFFFFF',
-		zIndex: 2,
-		elevation: 4,
-	},
-	stockPreviewText: {
-		color: '#1B4B3D',
-		fontFamily: 'MontserratSemiBold',
-		fontSize: 11,
 	},
 	termsContainer: {
 		width: '100%',
