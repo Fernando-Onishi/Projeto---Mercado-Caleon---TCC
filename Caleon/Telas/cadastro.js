@@ -11,13 +11,13 @@ import { auth, db } from '../Config/FireBaseConfig';
 import { CART_STORAGE_KEY } from '../Config/ProdutoStorage';
 import { getHomeRouteByRole } from '../src/utils/getUserRole';
 import { getRoleByEmail } from '../src/utils/getRoleByEmail';
+import SafeAreaScreen from '../Componentes/SafeAreaScreen';
 import {
 	Alert,
 	Image,
 	ImageBackground,
 	KeyboardAvoidingView,
 	Platform,
-	SafeAreaView,
 	ScrollView,
 	StyleSheet,
 	Text,
@@ -153,7 +153,7 @@ export default function TelaCadastro({ navigation }) {
 			style={styles.background}
 			imageStyle={styles.backgroundImage}
 		>
-			<SafeAreaView style={styles.safeArea}>
+			<SafeAreaScreen style={styles.safeArea}>
 				<KeyboardAvoidingView
 					style={styles.keyboardArea}
 					behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -259,7 +259,7 @@ export default function TelaCadastro({ navigation }) {
 						</View>
 					</ScrollView>
 				</KeyboardAvoidingView>
-			</SafeAreaView>
+			</SafeAreaScreen>
 		</ImageBackground>
 	);
 }

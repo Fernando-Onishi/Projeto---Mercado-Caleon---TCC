@@ -1,7 +1,8 @@
 import React, {useEffect} from 'react';
-import {View, StyleSheet, Text, Image, ImageBackground, TouchableOpacity} from 'react-native';
+import {StyleSheet, Image, ImageBackground} from 'react-native';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../Config/FireBaseConfig';
+import SafeAreaScreen from '../Componentes/SafeAreaScreen';
 
 
 export default function TelaSplash({navigation}) {
@@ -23,11 +24,11 @@ export default function TelaSplash({navigation}) {
   }, [navigation]);
 
   return(
-    <View style={estilos.caixa}>
+    <SafeAreaScreen style={estilos.caixa} edges={[]}>
       <ImageBackground source={require('../assets/fundo.png')} style={estilos.fundo}>
       <Image source={require('../assets/logo.png')} style={estilos.logo} />
       </ImageBackground>
-    </View>
+    </SafeAreaScreen>
   )
 }
 
@@ -56,4 +57,3 @@ const estilos = StyleSheet.create({
 
   }
 )
-

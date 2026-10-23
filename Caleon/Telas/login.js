@@ -9,7 +9,6 @@ import {
 	ImageBackground,
 	KeyboardAvoidingView,
 	Platform,
-	SafeAreaView,
 	ScrollView,
 	StyleSheet,
 	Text,
@@ -20,6 +19,7 @@ import {
 } from 'react-native';
 import { auth } from '../Config/FireBaseConfig';
 import { getHomeRouteByRole, getUserRole } from '../src/utils/getUserRole';
+import SafeAreaScreen from '../Componentes/SafeAreaScreen';
 
 export default function TelaLogin({ navigation }) {
 	const { width: screenWidth, height: screenHeight } = useWindowDimensions();
@@ -112,7 +112,7 @@ export default function TelaLogin({ navigation }) {
 			style={styles.background}
 			imageStyle={styles.backgroundImage}
 		>
-			<SafeAreaView style={styles.safeArea}>
+			<SafeAreaScreen style={styles.safeArea}>
 				<KeyboardAvoidingView
 					style={styles.keyboardArea}
 					behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -235,7 +235,7 @@ export default function TelaLogin({ navigation }) {
 						</View>
 					</ScrollView>
 				</KeyboardAvoidingView>
-			</SafeAreaView>
+			</SafeAreaScreen>
 		</ImageBackground>
 	);
 }

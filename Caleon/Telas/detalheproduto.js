@@ -9,13 +9,14 @@ import {
 	TouchableOpacity,
 	View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import SafeAreaScreen from '../Componentes/SafeAreaScreen';
 import { useFonts } from 'expo-font';
 import Feather from '@expo/vector-icons/Feather';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import NavegacaoInferior from '../Componentes/NavegacaoInferior';
 import { publishSacolaCount } from '../Componentes/useSacolaCount';
 import BotaoSacola from '../Componentes/BotaoSacola';
+import CircularIconButton from '../Componentes/CircularIconButton';
 import { formatCurrency, formatProductUnit, formatWeight, getProductById, getProductPrice, PRODUCTS } from '../Config/Produtos';
 import { addProductToCart, getFavorites, toggleFavorite } from '../Config/ProdutoStorage';
 import { showGlobalNotification } from '../Componentes/NotificacaoGlobal';
@@ -175,7 +176,7 @@ export default function DetalheProduto({ navigation, route }) {
 	if (!fontsLoaded || (isStoredProduct && !storedProductReady)) return null;
 	if (isStoredProduct && !storedProduct) {
 		return (
-			<SafeAreaView style={styles.safeArea}>
+			<SafeAreaScreen style={styles.safeArea}>
 				<View style={styles.topBand} />
 				<View style={[styles.screen, styles.unavailableProduct]}>
 					<Text style={styles.sectionTitle}>Produto indisponível</Text>
@@ -183,7 +184,7 @@ export default function DetalheProduto({ navigation, route }) {
 						<Text style={styles.unavailableBackText}>Voltar</Text>
 					</TouchableOpacity>
 				</View>
-			</SafeAreaView>
+			</SafeAreaScreen>
 		);
 	}
 
@@ -232,14 +233,18 @@ export default function DetalheProduto({ navigation, route }) {
 	}
 
 	return (
-		<SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+		<SafeAreaScreen style={styles.safeArea} edges={['top', 'bottom']}>
 			<StatusBar barStyle="light-content" backgroundColor={COLORS.dark} />
 			<View style={styles.topBand} />
 			<View style={styles.screen}>
 				<View style={styles.header}>
-					<TouchableOpacity style={styles.roundButton} onPress={goBack} accessibilityRole="button" accessibilityLabel="Voltar">
-						<Feather name="chevron-left" size={27} color={COLORS.white} />
-					</TouchableOpacity>
+					<CircularIconButton
+						style={styles.roundButton}
+						borderRadius={12}
+						icon={<Feather name="chevron-left" size={27} color={COLORS.white} />}
+						onPress={goBack}
+						accessibilityLabel="Voltar"
+					/>
 					<BotaoSacola navigation={navigation} />
 				</View>
 
@@ -341,7 +346,7 @@ export default function DetalheProduto({ navigation, route }) {
 				</View>
 				<NavegacaoInferior activeTab="Catálogo" navigation={navigation} />
 			</View>
-		</SafeAreaView>
+		</SafeAreaScreen>
 	);
 }
 
@@ -376,7 +381,7 @@ const styles = StyleSheet.create({
 	productInfo: { paddingHorizontal: 21, paddingTop: 4 },
 	categoryLine: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
 	category: { color: COLORS.muted, fontFamily: 'LilitaOne_400Regular', fontSize: 21 },
-	discountBadge: { color: COLORS.white, backgroundColor: COLORS.red, borderRadius: 14, overflow: 'hidden', paddingHorizontal: 11, paddingVertical: 4, fontFamily: 'LilitaOne_400Regular', fontSize: 13 },
+	discountBadge: { color: COLORS.white, backgroundColor: '#FF0000', borderRadius: 14, overflow: 'hidden', paddingHorizontal: 13, paddingVertical: 6, fontFamily: 'LilitaOne_400Regular', fontSize: 15 },
 	titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: -1 },
 	productName: { flex: 1, color: COLORS.dark, fontFamily: 'LilitaOne_400Regular', fontSize: 39 },
 	favoriteButton: { width: 43, height: 43, borderRadius: 22, backgroundColor: COLORS.mint, alignItems: 'center', justifyContent: 'center', marginLeft: 12 },
@@ -401,7 +406,7 @@ const styles = StyleSheet.create({
 	similarList: { gap: 9, paddingHorizontal: 13, paddingBottom: 3 },
 	similarCard: { width: 145, minHeight: 172, borderRadius: 9, backgroundColor: COLORS.white, padding: 8, position: 'relative' },
 	similarMain: { flex: 1, alignItems: 'flex-start' },
-	similarDiscount: { zIndex: 1, position: 'absolute', top: 1, left: 0, color: COLORS.white, backgroundColor: COLORS.red, borderRadius: 8, paddingHorizontal: 5, paddingVertical: 2, fontFamily: 'LilitaOne_400Regular', fontSize: 8 },
+	similarDiscount: { zIndex: 1, position: 'absolute', top: 1, left: 0, color: COLORS.white, backgroundColor: '#FF0000', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 4, fontFamily: 'LilitaOne_400Regular', fontSize: 11 },
 	similarImage: { alignSelf: 'center', width: 105, height: 83, marginTop: 3 },
 	similarHeart: { position: 'absolute', top: 7, right: 7, width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#E7F2EE' },
 	favoriteActive: { backgroundColor: '#FFE9E9' },

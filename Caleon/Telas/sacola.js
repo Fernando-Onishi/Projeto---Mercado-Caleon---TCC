@@ -7,7 +7,6 @@ import {
   LayoutAnimation,
   PanResponder,
   Platform,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -20,9 +19,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Feather, Ionicons } from '@expo/vector-icons';
 
 import NavegacaoInferior from '../Componentes/NavegacaoInferior';
+import CircularIconButton from '../Componentes/CircularIconButton';
 import { publishSacolaCount } from '../Componentes/useSacolaCount';
 import { PRODUCTS } from '../Config/Produtos';
 import { getFavorites, toggleFavorite as persistFavorite } from '../Config/ProdutoStorage';
+import SafeAreaScreen from '../Componentes/SafeAreaScreen';
 import { showGlobalNotification } from '../Componentes/NotificacaoGlobal';
 
 if (
@@ -378,20 +379,19 @@ export default function TelaSacola({ navigation }) {
   if (!fontsLoaded) return null;
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaScreen style={styles.container}>
       <StatusBar backgroundColor="#1B4B3D" barStyle="light-content" />
       <View style={styles.topBand} />
 
       <View style={styles.screenPanel}>
         <View style={styles.header}>
-          <TouchableOpacity
-            onPress={() => navigation?.goBack?.()}
+          <CircularIconButton
             style={styles.backButton}
-            accessibilityRole="button"
+            borderRadius={12}
+            icon={<Feather name="chevron-left" size={27} color="#fff" />}
+            onPress={() => navigation?.goBack?.()}
             accessibilityLabel="Voltar"
-          >
-            <Feather name="chevron-left" size={27} color="#fff" />
-          </TouchableOpacity>
+          />
           <Text style={styles.headerTitulo}>Sacola</Text>
         </View>
 
@@ -443,7 +443,7 @@ export default function TelaSacola({ navigation }) {
 
         <NavegacaoInferior activeTab="Sacola" navigation={navigation} />
       </View>
-    </SafeAreaView>
+    </SafeAreaScreen>
   );
 }
 

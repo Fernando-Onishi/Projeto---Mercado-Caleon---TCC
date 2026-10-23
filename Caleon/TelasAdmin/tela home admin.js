@@ -17,9 +17,11 @@ import {
 	View,
 	useWindowDimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import SafeAreaScreen from '../Componentes/SafeAreaScreen';
+import CircularIconButton from '../Componentes/CircularIconButton';
 import { useFonts } from 'expo-font';
 import Feather from '@expo/vector-icons/Feather';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
 import { collection, doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { getIdTokenResult, signOut } from 'firebase/auth';
@@ -396,22 +398,23 @@ export default function TelaHomeAdmin({ navigation }) {
 			<KeyboardAvoidingView style={styles.sheetHost} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
 				<Animated.View style={[styles.sheet, { maxHeight: windowHeight * 0.82, transform: [{ translateY }] }]}>
 					<View {...panResponder.panHandlers} style={styles.sheetHeader}>
-						<TouchableOpacity style={styles.closeButton} onPress={dismiss} accessibilityRole="button" accessibilityLabel="Fechar formulário">
-							<Feather name="x" size={19} color={COLORS.white} />
-						</TouchableOpacity>
+						<CircularIconButton
+							style={styles.closeButton}
+							icon={<Feather name="x" size={21} color={COLORS.white} />}
+							onPress={dismiss}
+							accessibilityLabel="Fechar formulário"
+						/>
 						<View style={styles.grabHandle} />
 						<Text style={styles.title}>Criar Produto</Text>
-						<TouchableOpacity
+						<CircularIconButton
 							style={[styles.logoutButton, isSigningOut && styles.disabledButton]}
+							icon={isSigningOut
+								? <ActivityIndicator color={COLORS.white} size="small" />
+								: <Ionicons name="exit-outline" size={24} color={COLORS.white} />}
 							onPress={confirmSignOut}
 							disabled={isSigningOut || saving}
-							accessibilityRole="button"
 							accessibilityLabel="Sair da conta"
-						>
-							{isSigningOut
-								? <ActivityIndicator color={COLORS.white} size="small" />
-								: <Feather name="log-out" size={17} color={COLORS.white} />}
-						</TouchableOpacity>
+						/>
 					</View>
 					<ScrollView
 						keyboardShouldPersistTaps="handled"
@@ -472,7 +475,7 @@ export default function TelaHomeAdmin({ navigation }) {
 					</ScrollView>
 				</Animated.View>
 			</KeyboardAvoidingView>
-			<SafeAreaView pointerEvents="none" style={styles.footerClearance} edges={['bottom']} />
+			<SafeAreaScreen pointerEvents="none" style={styles.footerClearance} edges={['bottom']} />
 		</View>
 	);
 }
@@ -484,9 +487,9 @@ const styles = StyleSheet.create({
 	sheet: { width: '100%', backgroundColor: COLORS.background, borderTopLeftRadius: 16, borderTopRightRadius: 16, overflow: 'hidden' },
 	sheetHeader: { minHeight: 72, alignItems: 'center', justifyContent: 'flex-end', paddingHorizontal: 16, paddingBottom: 10 },
 	grabHandle: { position: 'absolute', top: 10, width: 81, height: 6, borderRadius: 4, backgroundColor: COLORS.muted },
-	closeButton: { position: 'absolute', left: 16, bottom: 10, zIndex: 1, width: 30, height: 30, borderRadius: 15, backgroundColor: COLORS.red, alignItems: 'center', justifyContent: 'center' },
+	closeButton: { position: 'absolute', left: 16, bottom: 6, zIndex: 1 },
 	title: { color: COLORS.black, fontFamily: 'LilitaOne_400Regular', fontSize: 24, textAlign: 'center' },
-	logoutButton: { position: 'absolute', right: 16, bottom: 10, zIndex: 1, width: 30, height: 30, borderRadius: 15, backgroundColor: COLORS.red, alignItems: 'center', justifyContent: 'center' },
+	logoutButton: { position: 'absolute', right: 16, bottom: 6, zIndex: 1 },
 	formContent: { paddingHorizontal: 16, paddingBottom: 18, gap: 10 },
 	fieldGroup: { flex: 1, minWidth: 0 },
 	compactFieldGroup: { flex: 1 },

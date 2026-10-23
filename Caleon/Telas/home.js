@@ -9,7 +9,6 @@ import {
 	Image,
 	Modal,
 	PanResponder,
-	SafeAreaView,
 	ScrollView,
 	StyleSheet,
 	StatusBar,
@@ -24,6 +23,7 @@ import {
 } from 'react-native';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import Feather from '@expo/vector-icons/Feather';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { collection, onSnapshot, orderBy, query, where } from 'firebase/firestore';
 import { auth, db } from '../Config/FireBaseConfig';
 import BotaoSacola from '../Componentes/BotaoSacola';
@@ -37,8 +37,10 @@ import {
 	toggleFavorite,
 } from '../Config/ProdutoStorage';
 import NavegacaoInferior from '../Componentes/NavegacaoInferior';
+import CircularIconButton from '../Componentes/CircularIconButton';
 import { publishSacolaCount } from '../Componentes/useSacolaCount';
 import { showGlobalNotification } from '../Componentes/NotificacaoGlobal';
+import SafeAreaScreen from '../Componentes/SafeAreaScreen';
 
 const colors = {
 	green: '#1B4B3D',
@@ -161,9 +163,10 @@ function ProductCard({ product, width, onOpen, onToggleCart, onToggleFavorite, i
 					{product.discount ? <Text style={[styles.discount, {
 						left: 2 * scale,
 						top: 3 * scale,
-						fontSize: 7 * scale,
-						paddingHorizontal: 5 * scale,
-						borderRadius: 4 * scale,
+						fontSize: 9 * scale,
+						paddingHorizontal: 6 * scale,
+						paddingVertical: 3 * scale,
+						borderRadius: 16 * scale,
 					}]}>{product.discount}</Text> : null}
 					<Image source={{ uri: product.imageUrl }} style={styles.productImageContent} resizeMode="contain" />
 					<TouchableOpacity
@@ -175,7 +178,7 @@ function ProductCard({ product, width, onOpen, onToggleCart, onToggleFavorite, i
 						<MaterialCommunityIcons
 							name={isFavorite ? 'heart' : 'heart-outline'}
 							size={12 * scale}
-							color={isFavorite ? colors.white : '#7A8581'}
+							color={colors.white}
 						/>
 					</TouchableOpacity>
 				</View>
@@ -306,6 +309,7 @@ function BannerCarousel({ banners, width, onBannerPress }) {
 				horizontal
 				pagingEnabled
 				showsHorizontalScrollIndicator={false}
+				decelerationRate="fast"
 				keyExtractor={(banner) => banner.id}
 				getItemLayout={(_, index) => ({ length: width, offset: width * index, index })}
 				onMomentumScrollEnd={(event) => {
@@ -351,17 +355,21 @@ export function Produtos({ navigation }) {
 	}
 
 	return (
-		<SafeAreaView style={catalogStyles.safeArea}>
+		<SafeAreaScreen style={catalogStyles.safeArea}>
 			<StatusBar backgroundColor={colors.green} barStyle="light-content" />
 			<View style={catalogStyles.topBand} />
 			<View style={catalogStyles.screen}>
 				<View style={catalogStyles.header}>
-					<TouchableOpacity style={catalogStyles.backButton} onPress={() => {
-						if (navigation.canGoBack()) navigation.goBack();
-						else navigation.navigate('TelaHome');
-					}} accessibilityLabel="Voltar">
-						<Feather name="chevron-left" size={27} color="white" />
-					</TouchableOpacity>
+					<CircularIconButton
+						style={catalogStyles.backButton}
+						borderRadius={12}
+						icon={<Feather name="chevron-left" size={27} color="white" />}
+						onPress={() => {
+							if (navigation.canGoBack()) navigation.goBack();
+							else navigation.navigate('TelaHome');
+						}}
+						accessibilityLabel="Voltar"
+					/>
 					<Text style={catalogStyles.title}>Produtos</Text>
 					<BotaoSacola navigation={navigation} size={40} />
 				</View>
@@ -386,7 +394,7 @@ export function Produtos({ navigation }) {
 					onUnavailable={unavailable}
 				/>
 			</View>
-		</SafeAreaView>
+		</SafeAreaScreen>
 	);
 }
 
@@ -407,6 +415,7 @@ const catalogStyles = StyleSheet.create({
 
 export default function Home({ navigation, route }) {
 	const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+	const insets = useSafeAreaInsets();
 	const productCardWidth = Math.min(184, Math.max(154, windowWidth * 0.43));
 	const [fontsLoaded] = useFonts({
 		Lalezar_400Regular: require('@expo-google-fonts/lalezar/400Regular/Lalezar_400Regular.ttf'),
@@ -729,29 +738,132 @@ export default function Home({ navigation, route }) {
 	}
 
 	return (
-		<SafeAreaView style={styles.safeArea}>
+		<SafeAreaScreen style={styles.safeArea} edges={['bottom']}>
 			<StatusBar backgroundColor={colors.green} barStyle="light-content" />
-			<View style={styles.header}>
-				<TouchableOpacity
-					style={styles.locationIcon}
-					onPress={openCepEditor}
-					activeOpacity={0.8}
-					accessibilityRole="button"
-					accessibilityLabel="Editar endereço e CEP"
-				>
-					<Feather name="map-pin" size={30} color={colors.white} />
-				</TouchableOpacity>
-				<View style={styles.locationText}>
-					<Text style={styles.greeting} numberOfLines={1}>Olá, {userName}</Text>
-					<Text style={styles.address} numberOfLines={1}>{address}</Text>
-					<TouchableOpacity onPress={openCepEditor} accessibilityRole="button">
-						<Text style={styles.editCep}>
-							{cep || 'não cadastrado'}
-						</Text>
+			<ScrollView
+				style={styles.screenScroll}
+				contentContainerStyle={styles.screenScrollContent}
+				showsVerticalScrollIndicator={false}
+			>
+				<View style={[styles.header, {
+					paddingTop: insets.top > 0 ? insets.top + 8 : 16,
+				}]}>
+					<TouchableOpacity
+						style={styles.locationIcon}
+						onPress={openCepEditor}
+						activeOpacity={0.8}
+						accessibilityRole="button"
+						accessibilityLabel="Editar endereço e CEP"
+					>
+						<Feather name="map-pin" size={30} color={colors.white} />
 					</TouchableOpacity>
+					<View style={styles.locationText}>
+						<Text style={styles.greeting} numberOfLines={1}>Olá, {userName}</Text>
+						<Text style={styles.address} numberOfLines={1}>{address}</Text>
+						<TouchableOpacity onPress={openCepEditor} accessibilityRole="button">
+							<Text style={styles.editCep}>
+								{cep || 'não cadastrado'}
+							</Text>
+						</TouchableOpacity>
+					</View>
+					<BotaoSacola navigation={navigation} />
 				</View>
-				<BotaoSacola navigation={navigation} />
-			</View>
+
+				<View style={styles.contentArea}>
+					<View style={styles.searchBox}>
+						<Feather name="search" size={24} color="black" style={styles.searchIcon} />
+						<TextInput
+							placeholder="Pesquise produtos, categorias"
+							placeholderTextColor="#8b9491"
+							style={styles.searchInput}
+							value={searchText}
+							onChangeText={setSearchText}
+							returnKeyType="search"
+							accessibilityLabel="Pesquisar produtos e categorias"
+						/>
+					</View>
+					{!isSearching && (
+						<>
+							<BannerCarousel
+								banners={promoBanners}
+								width={promoBannerWidth}
+								onBannerPress={handleBannerPress}
+							/>
+							<ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesRow}>
+								{filterOptions.map((option) => (
+									<TouchableOpacity
+										key={option.name}
+										style={[styles.category, isFilterSelected(option) && styles.selectedCategory]}
+										onPress={() => selectFilter(option)}
+										accessibilityRole="button"
+										accessibilityState={{ selected: isFilterSelected(option) }}
+									>
+										<Text style={styles.categoryText}>
+											{option.type === 'price'
+												? `Preço ${priceSortDirection === 'ascending' ? '↑' : priceSortDirection === 'descending' ? '↓' : ''}`
+												: option.name}
+										</Text>
+									</TouchableOpacity>
+								))}
+								<TouchableOpacity
+									style={styles.categoryFilter}
+									onPress={() => setIsFilterModalVisible(true)}
+									activeOpacity={0.8}
+									accessibilityRole="button"
+									accessibilityLabel="Abrir filtros de produtos"
+								>
+									<Feather name="sliders" size={17} color={colors.white} />
+								</TouchableOpacity>
+							</ScrollView>
+						</>
+					)}
+					<View style={styles.scrollContent}>
+						{isSearching ? (
+							<>
+								{matchingCategories.length > 0 && (
+									<View style={styles.searchResults}>
+										<Text style={styles.sectionTitle}>Categorias</Text>
+										<View style={styles.searchCategories}>
+											{matchingCategories.map((category) => (
+												<View key={category} style={styles.category}>
+													<Text style={styles.categoryText}>{category}</Text>
+												</View>
+											))}
+										</View>
+									</View>
+								)}
+								{matchingProducts.length > 0 && (
+									<ProductSection
+										title="Produtos encontrados"
+										products={matchingProducts}
+										cardWidth={productCardWidth}
+										navigation={navigation}
+										favoriteIds={favoriteIds}
+										cartProductIds={cartProductIds}
+										onToggleFavorite={handleToggleFavorite}
+										onToggleCart={handleToggleCart}
+									/>
+								)}
+								{matchingCategories.length === 0 && matchingProducts.length === 0 && (
+									<Text style={styles.noSearchResults}>Nenhum produto ou categoria encontrado.</Text>
+								)}
+							</>
+						) : (
+							<>
+								{displayedCategoryProducts.length > 0 ? (
+									<>
+										<ProductSection title="Em Destaque" products={displayedCategoryProducts} cardWidth={productCardWidth} navigation={navigation} favoriteIds={favoriteIds} cartProductIds={cartProductIds} onToggleFavorite={handleToggleFavorite} onToggleCart={handleToggleCart} />
+										<ProductSection title="Em Promoção" products={displayedCategoryProducts.filter((product) => product.discount)} cardWidth={productCardWidth} navigation={navigation} favoriteIds={favoriteIds} cartProductIds={cartProductIds} onToggleFavorite={handleToggleFavorite} onToggleCart={handleToggleCart} />
+										<ProductSection title="Produtos" products={displayedCategoryProducts} cardWidth={productCardWidth} navigation={navigation} favoriteIds={favoriteIds} cartProductIds={cartProductIds} onToggleFavorite={handleToggleFavorite} onToggleCart={handleToggleCart} />
+									</>
+								) : (
+									<Text style={styles.noSearchResults}>Ainda não há produtos nesta categoria.</Text>
+								)}
+							</>
+						)}
+					</View>
+				</View>
+			</ScrollView>
 
 			<Modal
 				visible={isCepModalVisible}
@@ -807,101 +919,6 @@ export default function Home({ navigation, route }) {
 					</View>
 				</KeyboardAvoidingView>
 			</Modal>
-
-			<View style={styles.contentArea}>
-				<View style={styles.searchBox}>
-					<Feather name="search" size={24} color="black" style={styles.searchIcon} />
-					<TextInput
-						placeholder="Pesquise produtos, categorias"
-						placeholderTextColor="#8b9491"
-						style={styles.searchInput}
-						value={searchText}
-						onChangeText={setSearchText}
-						returnKeyType="search"
-						accessibilityLabel="Pesquisar produtos e categorias"
-					/>
-				</View>
-				{!isSearching && (
-					<>
-						<BannerCarousel
-							banners={promoBanners}
-							width={promoBannerWidth}
-							onBannerPress={handleBannerPress}
-						/>
-						<ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesRow}>
-							{filterOptions.map((option) => (
-								<TouchableOpacity
-									key={option.name}
-									style={[styles.category, isFilterSelected(option) && styles.selectedCategory]}
-									onPress={() => selectFilter(option)}
-									accessibilityRole="button"
-									accessibilityState={{ selected: isFilterSelected(option) }}
-								>
-									<Text style={styles.categoryText}>
-										{option.type === 'price'
-											? `Preço ${priceSortDirection === 'ascending' ? '↑' : priceSortDirection === 'descending' ? '↓' : ''}`
-											: option.name}
-									</Text>
-								</TouchableOpacity>
-							))}
-							<TouchableOpacity
-								style={styles.categoryFilter}
-								onPress={() => setIsFilterModalVisible(true)}
-								activeOpacity={0.8}
-								accessibilityRole="button"
-								accessibilityLabel="Abrir filtros de produtos"
-							>
-								<Feather name="sliders" size={17} color={colors.white} />
-							</TouchableOpacity>
-						</ScrollView>
-					</>
-				)}
-				<ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-					{isSearching ? (
-						<>
-							{matchingCategories.length > 0 && (
-								<View style={styles.searchResults}>
-									<Text style={styles.sectionTitle}>Categorias</Text>
-									<View style={styles.searchCategories}>
-										{matchingCategories.map((category) => (
-											<View key={category} style={styles.category}>
-												<Text style={styles.categoryText}>{category}</Text>
-											</View>
-										))}
-									</View>
-								</View>
-							)}
-							{matchingProducts.length > 0 && (
-								<ProductSection
-									title="Produtos encontrados"
-									products={matchingProducts}
-									cardWidth={productCardWidth}
-									navigation={navigation}
-									favoriteIds={favoriteIds}
-									cartProductIds={cartProductIds}
-									onToggleFavorite={handleToggleFavorite}
-									onToggleCart={handleToggleCart}
-								/>
-							)}
-							{matchingCategories.length === 0 && matchingProducts.length === 0 && (
-								<Text style={styles.noSearchResults}>Nenhum produto ou categoria encontrado.</Text>
-							)}
-						</>
-					) : (
-						<>
-							{displayedCategoryProducts.length > 0 ? (
-								<>
-									<ProductSection title="Em Destaque" products={displayedCategoryProducts} cardWidth={productCardWidth} navigation={navigation} favoriteIds={favoriteIds} cartProductIds={cartProductIds} onToggleFavorite={handleToggleFavorite} onToggleCart={handleToggleCart} />
-									<ProductSection title="Em Promoção" products={displayedCategoryProducts.filter((product) => product.discount)} cardWidth={productCardWidth} navigation={navigation} favoriteIds={favoriteIds} cartProductIds={cartProductIds} onToggleFavorite={handleToggleFavorite} onToggleCart={handleToggleCart} />
-									<ProductSection title="Produtos" products={displayedCategoryProducts} cardWidth={productCardWidth} navigation={navigation} favoriteIds={favoriteIds} cartProductIds={cartProductIds} onToggleFavorite={handleToggleFavorite} onToggleCart={handleToggleCart} />
-								</>
-							) : (
-								<Text style={styles.noSearchResults}>Ainda não há produtos nesta categoria.</Text>
-							)}
-						</>
-					)}
-				</ScrollView>
-			</View>
 
 			<Modal
 				visible={isFilterModalVisible}
@@ -993,7 +1010,7 @@ export default function Home({ navigation, route }) {
 			</Modal>
 
 			<NavegacaoInferior activeTab="Início" navigation={navigation} />
-		</SafeAreaView>
+		</SafeAreaScreen>
 	);
 }
 
@@ -1002,24 +1019,27 @@ const styles = StyleSheet.create({
 		flex: 1,
 		backgroundColor: '#194B38',
 	},
-	contentArea: {
+	screenScroll: {
 		flex: 1,
-		marginTop: -36,
-		paddingTop: 26,
+	},
+	screenScrollContent: {
+		flexGrow: 1,
+	},
+	contentArea: {
+		flexGrow: 1,
+		paddingTop: 18,
+		paddingBottom: 12,
 		backgroundColor: '#F1F3F5',
 		borderTopRightRadius: 28,
 		borderTopLeftRadius: 28,
-		zIndex: 1,
-		elevation: 2,
 	},
 	header: {
-		height: 140,
+		minHeight: 140,
 		backgroundColor: '#194B38',
 		flexDirection: 'row',
 		alignItems: 'center',
 		paddingHorizontal: 16,
 		paddingBottom: 30,
-		zIndex: 0,
 	},
 	locationIcon: {
 		width: 50,
@@ -1151,6 +1171,7 @@ const styles = StyleSheet.create({
 	promoCarousel: {
 		marginTop: 12,
 		marginHorizontal: 18,
+		marginBottom: 16,
 	},
 	promoEmptyState: {
 		minHeight: 116,
@@ -1215,6 +1236,7 @@ const styles = StyleSheet.create({
 		paddingHorizontal: 18,
 		gap: 8,
 		paddingVertical: 12,
+		marginBottom: 8,
 		alignItems: 'center',
 	},
 	categoryFilter: {
@@ -1324,7 +1346,7 @@ const styles = StyleSheet.create({
 	},
 
 	scrollContent: {
-		paddingBottom: 10,
+		paddingBottom: 18,
 	},
 	searchResults: {
 		paddingHorizontal: 18,
@@ -1399,7 +1421,7 @@ const styles = StyleSheet.create({
 		width: 28,
 		height: 28,
 		borderRadius: 14,
-		backgroundColor: '#d7ece4',
+		backgroundColor: '#1B4B3D',
 		alignItems: 'center',
 		justifyContent: 'center',
 	},
@@ -1410,12 +1432,12 @@ const styles = StyleSheet.create({
 		position: 'absolute',
 		left: 2,
 		top: 3,
-		backgroundColor: '#ff3036',
+		backgroundColor: '#FF0000',
 		color: colors.white,
-		fontFamily: 'Montserrat_500Medium',
-		fontSize: 6,
+		fontFamily: 'LilitaOne_400Regular',
+		fontSize: 9,
 		paddingHorizontal: 3,
-		paddingVertical: 2,
+		paddingVertical: 3,
 		borderRadius: 3,
 	},
 	productName: {

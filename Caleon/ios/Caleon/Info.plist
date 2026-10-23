@@ -26,6 +26,8 @@
 	<true/>
 	<key>LSMinimumSystemVersion</key>
 	<string>12.0</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Permitir que o Caleon use a câmera para ler códigos.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>O Caleon usa sua galeria para selecionar fotos dos produtos cadastrados.</string>
 	<key>NSAppTransportSecurity</key>

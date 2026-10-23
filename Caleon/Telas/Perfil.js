@@ -17,13 +17,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
 import Feather from '@expo/vector-icons/Feather';
+import Fontisto from '@expo/vector-icons/Fontisto';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { signOut, updateEmail, updatePassword, updateProfile } from 'firebase/auth';
 import { auth } from '../Config/FireBaseConfig';
 import { getProfileStorageKey } from '../Config/PerfilStorage';
-import BotaoSacola from '../Componentes/BotaoSacola';
 import NavegacaoInferior from '../Componentes/NavegacaoInferior';
+import CircularIconButton from '../Componentes/CircularIconButton';
 
 const COLORS = {
 	darkGreen: '#1B4B3D',
@@ -229,6 +231,13 @@ export default function Perfil({ navigation }) {
 		setIsLogoutModalVisible(true);
 	}
 
+	function explainPasswordVisibility() {
+		Alert.alert(
+			'Senha protegida',
+			'O Firebase não permite visualizar a senha atual. Para mantê-la, deixe o campo de senha em branco ao editar o perfil.',
+		);
+	}
+
 	function goBack() {
 		if (navigation?.canGoBack()) navigation.goBack();
 		else navigation?.navigate('TelaHome');
@@ -277,18 +286,30 @@ export default function Perfil({ navigation }) {
 				>
 					<View style={styles.header}>
 						<View style={styles.headerActions}>
-							<TouchableOpacity style={styles.backButton} onPress={goBack} accessibilityRole="button" accessibilityLabel="Voltar">
-								<Feather name="chevron-left" size={27} color={COLORS.white} />
-							</TouchableOpacity>
+							<CircularIconButton
+								style={styles.backButton}
+								borderRadius={12}
+								icon={<Feather name="chevron-left" size={27} color={COLORS.white} />}
+								onPress={goBack}
+								accessibilityLabel="Voltar"
+							/>
 							<TouchableOpacity
 								style={styles.logoutButton}
 								onPress={confirmLogout}
 								accessibilityRole="button"
 								accessibilityLabel="Sair da conta"
 							>
-								<Feather name="log-out" size={20} color={COLORS.white} />
+								<Ionicons name="exit-outline" size={24} color={COLORS.white} />
 							</TouchableOpacity>
-							<BotaoSacola navigation={navigation} size={40} />
+							<TouchableOpacity
+								style={styles.historyButton}
+								onPress={() => navigation.navigate('TelaHistoricoPedidos')}
+								activeOpacity={0.8}
+								accessibilityRole="button"
+								accessibilityLabel="Histórico de pedidos"
+							>
+								<Fontisto name="history" size={24} color={COLORS.white} />
+							</TouchableOpacity>
 						</View>
 						<Text style={styles.title}>Perfil</Text>
 						{!isEditing ? (
@@ -323,7 +344,7 @@ export default function Perfil({ navigation }) {
 									accessibilityRole="button"
 									accessibilityLabel="Editar foto do perfil"
 								>
-									<Feather name="edit-2" size={21} color={COLORS.background} />
+									<Feather name="edit-2" size={21} color={COLORS.white} />
 								</TouchableOpacity>
 							) : null}
 						</View>
@@ -342,6 +363,14 @@ export default function Perfil({ navigation }) {
 												<Text style={[styles.input, styles.readOnlyValue]}>
 													{hasPassword ? '••••••••' : 'Não configurada'}
 												</Text>
+												<TouchableOpacity
+													style={styles.passwordVisibilityButton}
+													onPress={explainPasswordVisibility}
+													accessibilityRole="button"
+													accessibilityLabel="Informações sobre a senha protegida"
+												>
+													<Feather name="eye-off" size={20} color={COLORS.muted} />
+												</TouchableOpacity>
 											</View>
 										</View>
 									);
@@ -512,6 +541,14 @@ const styles = StyleSheet.create({
 		marginLeft: 'auto',
 		marginRight: 12,
 	},
+	historyButton: {
+		width: 40,
+		height: 40,
+		borderRadius: 12,
+		backgroundColor: COLORS.mint,
+		alignItems: 'center',
+		justifyContent: 'center',
+	},
 	title: { color: COLORS.black, fontFamily: 'LilitaOne_400Regular', fontSize: 30, marginTop: 5 },
 	subtitle: { color: '#226842', fontFamily: 'LilitaOne_400Regular', fontSize: 15, marginTop: 3 },
 	editProfileButton: {
@@ -549,7 +586,7 @@ const styles = StyleSheet.create({
 		height: 49,
 		borderRadius: 25,
 		borderWidth: 4,
-		borderColor: COLORS.background,
+		borderColor: COLORS.white,
 		backgroundColor: COLORS.mint,
 		alignItems: 'center',
 		justifyContent: 'center',

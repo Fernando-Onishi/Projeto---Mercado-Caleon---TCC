@@ -4,7 +4,6 @@ import {
 	Alert,
 	FlatList,
 	Image,
-	SafeAreaView,
 	StatusBar,
 	StyleSheet,
 	Text,
@@ -13,6 +12,7 @@ import {
 	View,
 } from 'react-native';
 import { useFonts } from 'expo-font';
+import SafeAreaScreen from '../Componentes/SafeAreaScreen';
 import Feather from '@expo/vector-icons/Feather';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
@@ -33,6 +33,7 @@ import {
 	toggleFavorite,
 } from '../Config/ProdutoStorage';
 import { showGlobalNotification } from '../Componentes/NotificacaoGlobal';
+import CircularIconButton from '../Componentes/CircularIconButton';
 
 const colors = {
 	green: '#1B4B3D',
@@ -94,6 +95,25 @@ function mapProduct(snapshot) {
 			? `${Math.round((1 - pricePerKg / product.originalPricePerKg) * 100)}% OFF`
 			: null,
 	};
+}
+
+function getCategoryQueryValues(category) {
+	const normalizedCategory = category
+		.normalize('NFD')
+		.replace(/[\u0300-\u036f]/g, '')
+		.replace(/[^a-zA-Z0-9]/g, '')
+		.toLocaleLowerCase('pt-BR');
+	const values = new Set([
+		category,
+		category.toLocaleLowerCase('pt-BR'),
+		category.toLocaleUpperCase('pt-BR'),
+	]);
+
+	if (normalizedCategory === 'hortifruti') {
+		['Horti-Fruti', 'HortiFruti', 'Hortifruti'].forEach((value) => values.add(value));
+	}
+
+	return [...values];
 }
 
 function ProductCard({
@@ -187,7 +207,7 @@ export default function ProdutosCategoriaScreen({ navigation, route }) {
 		Montserrat_500Medium: require('@expo-google-fonts/montserrat/500Medium/Montserrat_500Medium.ttf'),
 		Montserrat_700Bold: require('@expo-google-fonts/montserrat/700Bold/Montserrat_700Bold.ttf'),
 	});
-	const cardWidth = Math.max(120, (windowWidth - 60) / 2);
+	const cardWidth = Math.max(120, (windowWidth - 36) / 2);
 
 	useEffect(() => {
 		if (!category) {
@@ -199,9 +219,10 @@ export default function ProdutosCategoriaScreen({ navigation, route }) {
 
 		setLoading(true);
 		setLoadError(false);
+		setProducts([]);
 		const productsQuery = query(
 			collection(db, 'products'),
-			where('category', '==', category),
+			where('category', 'in', getCategoryQueryValues(category)),
 		);
 
 		return onSnapshot(
@@ -319,52 +340,49 @@ export default function ProdutosCategoriaScreen({ navigation, route }) {
 	}
 
 	return (
-		<SafeAreaView style={styles.safeArea}>
+		<SafeAreaScreen style={styles.safeArea}>
 			<StatusBar backgroundColor={colors.green} barStyle="light-content" />
 			<View style={styles.topBand} />
 			<View style={styles.screen}>
 				<View style={styles.header}>
 					<View style={styles.headerActions}>
-						<TouchableOpacity
+						<CircularIconButton
 							style={styles.backButton}
+							borderRadius={12}
+							icon={<Feather name="chevron-left" size={27} color={colors.white} />}
 							onPress={() => navigation.goBack()}
-							activeOpacity={0.8}
-							accessibilityRole="button"
 							accessibilityLabel="Voltar"
-						>
-							<Feather name="arrow-left" size={20} color={colors.white} />
-						</TouchableOpacity>
-						<BotaoSacola navigation={navigation} size={42} />
+						/>
+						<BotaoSacola navigation={navigation} size={40} />
 					</View>
 					<Text style={styles.title}>Produtos</Text>
 					<Text style={styles.subtitle}>{category || 'Categoria'}</Text>
 				</View>
 
-				<View style={styles.listPanel}>
-					<FlatList
-						data={products}
-						numColumns={2}
-						keyExtractor={(product) => product.id}
-						columnWrapperStyle={styles.productRow}
-						contentContainerStyle={styles.productGrid}
-						showsVerticalScrollIndicator={false}
-						ListEmptyComponent={renderEmptyState}
-						renderItem={({ item }) => (
-							<ProductCard
-								product={item}
-								width={cardWidth}
-								isFavorite={favoriteIds.includes(item.id)}
-								isInCart={cartProductIds.includes(item.id)}
-								onOpen={() => navigation.navigate('TelaDetalheProduto', { productId: item.id })}
-								onToggleFavorite={handleToggleFavorite}
-								onToggleCart={handleToggleCart}
-							/>
-						)}
-					/>
-				</View>
+				<FlatList
+					style={styles.productList}
+					data={products}
+					numColumns={2}
+					keyExtractor={(product) => product.id}
+					columnWrapperStyle={styles.productRow}
+					contentContainerStyle={styles.productGrid}
+					showsVerticalScrollIndicator={false}
+					ListEmptyComponent={renderEmptyState}
+					renderItem={({ item }) => (
+						<ProductCard
+							product={item}
+							width={cardWidth}
+							isFavorite={favoriteIds.includes(item.id)}
+							isInCart={cartProductIds.includes(item.id)}
+							onOpen={() => navigation.navigate('TelaDetalheProduto', { productId: item.id })}
+							onToggleFavorite={handleToggleFavorite}
+							onToggleCart={handleToggleCart}
+						/>
+					)}
+				/>
 				<NavegacaoInferior activeTab="Catálogo" navigation={navigation} />
 			</View>
-		</SafeAreaView>
+		</SafeAreaScreen>
 	);
 }
 
@@ -374,7 +392,7 @@ const styles = StyleSheet.create({
 		backgroundColor: colors.green,
 	},
 	topBand: {
-		height: 28,
+		height: 40,
 		backgroundColor: colors.green,
 	},
 	screen: {
@@ -386,48 +404,43 @@ const styles = StyleSheet.create({
 		overflow: 'hidden',
 	},
 	header: {
-		height: 140,
+		height: 132,
 		alignItems: 'center',
-		paddingTop: 12,
+		paddingTop: 15,
 	},
 	headerActions: {
 		width: '100%',
-		paddingHorizontal: 18,
+		paddingHorizontal: 16,
 		flexDirection: 'row',
 		alignItems: 'center',
 		justifyContent: 'space-between',
 	},
 	backButton: {
-		width: 42,
-		height: 42,
-		borderRadius: 21,
-		backgroundColor: colors.green,
+		width: 40,
+		height: 40,
+		borderRadius: 12,
+		backgroundColor: colors.mint,
 		alignItems: 'center',
 		justifyContent: 'center',
 	},
 	title: {
-		marginTop: 5,
-		color: colors.green,
+		marginTop: 14,
+		color: colors.black,
 		fontFamily: 'LilitaOne_400Regular',
 		fontSize: 30,
 	},
 	subtitle: {
 		marginTop: 1,
-		color: colors.green,
+		color: '#226842',
 		fontFamily: 'Montserrat_700Bold',
-		fontSize: 15,
+		fontSize: 18,
 	},
-	listPanel: {
+	productList: {
 		flex: 1,
-		marginHorizontal: 12,
-		marginBottom: 8,
-		borderRadius: 24,
-		backgroundColor: colors.white,
-		overflow: 'hidden',
 	},
 	productGrid: {
-		paddingHorizontal: 12,
-		paddingTop: 14,
+		paddingHorizontal: 13,
+		paddingTop: 0,
 		paddingBottom: 20,
 	},
 	productRow: {
@@ -458,16 +471,16 @@ const styles = StyleSheet.create({
 	discountBadge: {
 		position: 'absolute',
 		top: 2,
-		left: 0,
+		left: 2,
 		zIndex: 1,
-		paddingHorizontal: 7,
-		paddingVertical: 4,
+		paddingHorizontal: 9,
+		paddingVertical: 5,
 		borderRadius: 10,
 		overflow: 'hidden',
-		backgroundColor: colors.red,
+		backgroundColor: '#FF0000',
 		color: colors.white,
 		fontFamily: 'Montserrat_700Bold',
-		fontSize: 9,
+		fontSize: 12,
 	},
 	favoriteButton: {
 		position: 'absolute',

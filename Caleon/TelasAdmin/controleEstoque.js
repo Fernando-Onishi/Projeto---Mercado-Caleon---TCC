@@ -2,7 +2,8 @@ import React from 'react';
 import {
 	Alert, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import SafeAreaScreen from '../Componentes/SafeAreaScreen';
+import CircularIconButton from '../Componentes/CircularIconButton';
 import Feather from '@expo/vector-icons/Feather';
 import NavegacaoAdmin from '../Componentes/NavegacaoAdmin';
 
@@ -39,7 +40,7 @@ function IndicatorCard({ title, value, detail, icon, color }) {
 
 export default function ControleEstoque({ navigation }) {
 	return (
-		<SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+		<SafeAreaScreen style={styles.safe} edges={['top', 'bottom']}>
 			<StatusBar barStyle="light-content" backgroundColor={C.green} />
 			<View style={styles.topbar}>
 				<View style={styles.brandMark}><Text style={styles.brandLetter}>C</Text></View>
@@ -47,14 +48,11 @@ export default function ControleEstoque({ navigation }) {
 					<Text style={styles.kicker}>CAMELION • PAINEL OPERACIONAL</Text>
 					<Text style={styles.greeting}>Olá, Administrador</Text>
 				</View>
-				<TouchableOpacity
-					style={styles.bell}
+				<CircularIconButton
+					icon={<Feather name="bell" size={20} color={C.white} />}
 					onPress={() => Alert.alert('Notificações', 'Nenhum alerta de estoque no momento.')}
-					accessibilityRole="button"
 					accessibilityLabel="Notificações"
-				>
-					<Feather name="bell" size={20} color={C.white} />
-				</TouchableOpacity>
+				/>
 			</View>
 			<ScrollView style={styles.screen} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
 				<Text style={styles.title}>Controle de Estoque</Text>
@@ -63,7 +61,7 @@ export default function ControleEstoque({ navigation }) {
 				</View>
 			</ScrollView>
 			<NavegacaoAdmin navigation={navigation} activeTab="Estoque" />
-		</SafeAreaView>
+		</SafeAreaScreen>
 	);
 }
 
@@ -75,7 +73,6 @@ const styles = StyleSheet.create({
 	brandCopy: { flex: 1 },
 	kicker: { fontSize: 9, color: '#7DE1C4', fontWeight: '800' },
 	greeting: { color: C.white, fontWeight: '800', fontSize: 14, marginTop: 2 },
-	bell: { width: 36, height: 36, borderRadius: 10, backgroundColor: C.mint, alignItems: 'center', justifyContent: 'center' },
 	screen: { flex: 1, backgroundColor: C.bg, borderTopLeftRadius: 26, borderTopRightRadius: 26, overflow: 'hidden' },
 	content: { paddingHorizontal: 16, paddingTop: 15, paddingBottom: 24 },
 	title: { color: '#111715', fontSize: 22, fontWeight: '900', textAlign: 'center', marginBottom: 34 },

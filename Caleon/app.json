@@ -3,13 +3,22 @@
     "name": "Caleon",
     "slug": "Caleon",
     "version": "1.0.0",
+    "icon": "./assets/logoRedimensionada1024x1024.png",
     "plugins": [
-      "expo-font"
+      "expo-font",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Permitir que o Caleon use a câmera para ler códigos.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ]
     ],
     "android": {
       "package": "com.caleon.app",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/logoRedimensionada.png",
+        "foregroundImage": "./assets/logoRedimensionada1024x1024.png",
         "backgroundImage": "./assets/fundoRedimensionado.png"
       }
     },

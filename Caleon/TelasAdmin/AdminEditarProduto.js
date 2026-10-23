@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Alert, Image, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import SafeAreaScreen from '../Componentes/SafeAreaScreen';
+import CircularIconButton from '../Componentes/CircularIconButton';
 import Feather from '@expo/vector-icons/Feather';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -75,11 +76,11 @@ export default function AdminEditarProduto({ navigation, route }) {
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+    <SafeAreaScreen style={styles.safe} edges={['top', 'bottom']}>
       <StatusBar barStyle="light-content" backgroundColor={C.green} />
-      <View style={styles.topbar}><View style={styles.brandMark}><Text style={styles.brandLetter}>C</Text></View><View style={{ flex: 1 }}><Text style={styles.kicker}>CAMELION • PAINEL OPERACIONAL</Text><Text style={styles.greeting}>Olá, Administrador</Text></View><TouchableOpacity style={styles.bell} onPress={() => Alert.alert('Ajuda', 'Preencha os campos e toque em Salvar.')}><Feather name="help-circle" size={20} color="#FFFFFF" /></TouchableOpacity></View>
+      <View style={styles.topbar}><View style={styles.brandMark}><Text style={styles.brandLetter}>C</Text></View><View style={{ flex: 1 }}><Text style={styles.kicker}>CAMELION • PAINEL OPERACIONAL</Text><Text style={styles.greeting}>Olá, Administrador</Text></View><CircularIconButton icon={<Feather name="help-circle" size={20} color="#FFFFFF" />} onPress={() => Alert.alert('Ajuda', 'Preencha os campos e toque em Salvar.')} accessibilityLabel="Ajuda" /></View>
       <View style={styles.screen}>
-        <View style={styles.titleRow}><TouchableOpacity style={styles.back} onPress={() => navigation.goBack()}><Feather name="chevron-left" size={22} color="#FFFFFF" /></TouchableOpacity><Text style={styles.title}>Editar Produtos</Text></View>
+        <View style={styles.titleRow}><CircularIconButton icon={<Feather name="chevron-left" size={22} color="#FFFFFF" />} onPress={() => navigation.goBack()} accessibilityLabel="Voltar" /><Text style={styles.title}>Editar Produtos</Text></View>
         {products.length > 0 ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.productPicker}>{products.map((p) => <TouchableOpacity key={p.id} onPress={() => selectProduct(p)} style={[styles.productChip, selectedId === p.id && styles.productChipActive]}><Text style={[styles.productChipText, selectedId === p.id && styles.productChipTextActive]}>{p.name}</Text></TouchableOpacity>)}</ScrollView> : null}
         <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           <Text style={styles.label}>Produto</Text><TextInput style={styles.input} value={form.name} onChangeText={(v) => update('name', v)} placeholder="Ex.: Morango" placeholderTextColor="#929B97" />
@@ -94,7 +95,7 @@ export default function AdminEditarProduto({ navigation, route }) {
         </ScrollView>
       </View>
       <NavegacaoAdmin navigation={navigation} activeTab="Editar" />
-    </SafeAreaView>
+    </SafeAreaScreen>
   );
 }
 
@@ -105,10 +106,8 @@ const styles = StyleSheet.create({
   brandLetter: { color: '#FFFFFF', fontSize: 22, fontWeight: '900' },
   kicker: { color: '#7DE1C4', fontSize: 9, fontWeight: '800' },
   greeting: { color: '#FFFFFF', fontSize: 13, fontWeight: '800', marginTop: 2 },
-  bell: { width: 36, height: 36, borderRadius: 11, backgroundColor: C.mint, alignItems: 'center', justifyContent: 'center' },
   screen: { flex: 1, backgroundColor: C.bg, borderTopLeftRadius: 26, borderTopRightRadius: 26, paddingHorizontal: 14, paddingTop: 13, overflow: 'hidden' },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
-  back: { width: 36, height: 36, borderRadius: 11, backgroundColor: C.mint, alignItems: 'center', justifyContent: 'center' },
   title: { color: '#111715', fontSize: 22, fontWeight: '900' },
   productPicker: { gap: 7, paddingBottom: 8 },
   productChip: { paddingHorizontal: 12, paddingVertical: 7, backgroundColor: '#FFFFFF', borderRadius: 17, borderWidth: 1, borderColor: '#DDE5E1' },

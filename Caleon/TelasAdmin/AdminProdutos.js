@@ -3,7 +3,8 @@ import {
   Alert, FlatList, Image, Modal, ScrollView, StatusBar, StyleSheet, Text, TextInput,
   TouchableOpacity, View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import SafeAreaScreen from '../Componentes/SafeAreaScreen';
+import CircularIconButton from '../Componentes/CircularIconButton';
 import Feather from '@expo/vector-icons/Feather';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -99,12 +100,12 @@ export default function AdminProdutos({ navigation, route }) {
   const filters = ['Todos', 'Frutas', 'Verduras', 'Estoque baixo'];
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+    <SafeAreaScreen style={styles.safe} edges={['top', 'bottom']}>
       <StatusBar barStyle="light-content" backgroundColor={C.green} />
       <View style={styles.topbar}>
         <View style={styles.brandMark}><Text style={styles.brandLetter}>C</Text></View>
         <View style={{ flex: 1 }}><Text style={styles.kicker}>CAMELION • PAINEL OPERACIONAL</Text><Text style={styles.greeting}>Olá, Administrador</Text></View>
-        <TouchableOpacity style={styles.addTop} onPress={startAdd}><Feather name="plus" size={22} color={C.green} /></TouchableOpacity>
+        <CircularIconButton icon={<Feather name="plus" size={22} color={C.white} />} onPress={startAdd} accessibilityLabel="Adicionar produto" />
       </View>
       <View style={styles.screen}>
         <View style={styles.headerRow}><Text style={styles.title}>Editar Produtos</Text><Text style={styles.count}>{products.length} produtos</Text></View>
@@ -143,12 +144,12 @@ export default function AdminProdutos({ navigation, route }) {
           />
         )}
       </View>
-      <NavegacaoAdmin navigation={navigation} activeTab="Produtos" />
+      <NavegacaoAdmin navigation={navigation} activeTab="Catálogo" />
       <Modal visible={modalVisible} animationType="slide" transparent onRequestClose={() => setModalVisible(false)}>
         <View style={styles.modalBackdrop}>
           <View style={styles.sheet}>
             <View style={styles.handle} />
-            <View style={styles.sheetTitleRow}><TouchableOpacity style={styles.close} onPress={() => setModalVisible(false)}><Feather name="x" size={21} color="#FFFFFF" /></TouchableOpacity><Text style={styles.sheetTitle}>{editingId ? 'Editar Produto' : 'Adicionar Produto'}</Text><View style={{ width: 34 }} /></View>
+            <View style={styles.sheetTitleRow}><CircularIconButton icon={<Feather name="x" size={21} color="#FFFFFF" />} onPress={() => setModalVisible(false)} accessibilityLabel="Fechar formulário" /><Text style={styles.sheetTitle}>{editingId ? 'Editar Produto' : 'Adicionar Produto'}</Text><View style={{ width: 40 }} /></View>
             <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
               <Text style={styles.label}>Produto</Text><TextInput style={styles.input} value={form.name} onChangeText={(v) => updateField('name', v)} placeholder="Ex.: Morango" placeholderTextColor="#929B97" />
               <Text style={styles.label}>Descrição</Text><TextInput style={[styles.input, styles.multiline]} value={form.description} onChangeText={(v) => updateField('description', v)} placeholder="Descrição do produto" multiline placeholderTextColor="#929B97" />
@@ -164,7 +165,7 @@ export default function AdminProdutos({ navigation, route }) {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </SafeAreaScreen>
   );
 }
 
@@ -175,7 +176,6 @@ const styles = StyleSheet.create({
   brandLetter: { color: '#FFFFFF', fontSize: 22, fontWeight: '900' },
   kicker: { color: '#7DE1C4', fontSize: 9, fontWeight: '800' },
   greeting: { color: '#FFFFFF', fontSize: 13, fontWeight: '800', marginTop: 2 },
-  addTop: { width: 36, height: 36, borderRadius: 11, backgroundColor: '#D8F6E9', alignItems: 'center', justifyContent: 'center' },
   screen: { flex: 1, backgroundColor: C.bg, borderTopLeftRadius: 26, borderTopRightRadius: 26, paddingHorizontal: 13, paddingTop: 15, overflow: 'hidden' },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   title: { color: '#111715', fontSize: 23, fontWeight: '900' },
@@ -194,7 +194,7 @@ const styles = StyleSheet.create({
   productArt: { height: 105, borderRadius: 12, backgroundColor: '#F6F7F6', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative' },
   emoji: { fontSize: 57 },
   productImage: { width: '100%', height: '100%' },
-  discount: { position: 'absolute', top: 6, left: 6, backgroundColor: C.red, color: '#FFFFFF', fontSize: 8, fontWeight: '900', paddingHorizontal: 5, paddingVertical: 3, borderRadius: 5, zIndex: 1 },
+  discount: { position: 'absolute', top: 6, left: 6, backgroundColor: '#FF0000', color: '#FFFFFF', fontSize: 11, fontWeight: '900', paddingHorizontal: 7, paddingVertical: 5, borderRadius: 7, zIndex: 1 },
   stockWarning: { position: 'absolute', top: 6, right: 6, backgroundColor: '#FFF0D8', color: '#A96E00', fontSize: 8, fontWeight: '900', paddingHorizontal: 5, paddingVertical: 3, borderRadius: 5, zIndex: 1 },
   productName: { color: '#226842', fontSize: 16, fontWeight: '900', marginTop: 6 },
   stockText: { color: C.muted, fontSize: 9, marginTop: 1 },
@@ -209,7 +209,6 @@ const styles = StyleSheet.create({
   sheet: { width: '100%', maxWidth: 520, maxHeight: '92%', backgroundColor: C.bg, borderTopLeftRadius: 23, borderTopRightRadius: 23, paddingHorizontal: 15, paddingTop: 9, paddingBottom: 18 },
   handle: { width: 52, height: 4, borderRadius: 3, backgroundColor: '#909895', alignSelf: 'center', marginBottom: 12 },
   sheetTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
-  close: { width: 32, height: 32, borderRadius: 16, backgroundColor: C.red, alignItems: 'center', justifyContent: 'center' },
   sheetTitle: { color: '#111715', fontSize: 18, fontWeight: '900' },
   label: { color: '#171B19', fontSize: 11, fontWeight: '800', marginTop: 10, marginBottom: 4 },
   input: { minHeight: 42, borderRadius: 8, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E1E6E3', paddingHorizontal: 10, color: C.ink, fontSize: 12 },

@@ -5,7 +5,6 @@ import {
 	Image,
 	PanResponder,
 	ScrollView,
-	SafeAreaView,
 	StatusBar,
 	StyleSheet,
 	Text,
@@ -21,6 +20,8 @@ import { publishSacolaCount } from '../Componentes/useSacolaCount';
 import { formatCurrency, formatWeight, getProductPrice, PRODUCTS } from '../Config/Produtos';
 import { addProductToCart, getFavorites, toggleFavorite } from '../Config/ProdutoStorage';
 import { showGlobalNotification } from '../Componentes/NotificacaoGlobal';
+import SafeAreaScreen from '../Componentes/SafeAreaScreen';
+import CircularIconButton from '../Componentes/CircularIconButton';
 
 const palette = {
 	green: '#1b4b3d',
@@ -147,19 +148,18 @@ export default function Favoritos({ navigation }) {
 	}
 
 	return (
-		<SafeAreaView style={styles.safeArea}>
+		<SafeAreaScreen style={styles.safeArea}>
 			<StatusBar backgroundColor={palette.green} barStyle="light-content" />
 			<View style={styles.topBand} />
 			<View style={styles.screenPanel}>
 				<View style={styles.header}>
-					<TouchableOpacity
+					<CircularIconButton
 						style={styles.roundButton}
+						borderRadius={12}
+						icon={<Feather name="chevron-left" size={27} color={palette.white} />}
 						onPress={() => navigation.navigate('TelaHome')}
-						accessibilityRole="button"
 						accessibilityLabel="Voltar"
-					>
-						<Feather name="chevron-left" size={27} color={palette.white} />
-					</TouchableOpacity>
+					/>
 					<Text style={styles.title}>Favoritos</Text>
 				</View>
 
@@ -188,7 +188,7 @@ export default function Favoritos({ navigation }) {
 				</ScrollView>
 				<NavegacaoInferior activeTab="Favoritos" navigation={navigation} />
 			</View>
-		</SafeAreaView>
+		</SafeAreaScreen>
 	);
 }
 

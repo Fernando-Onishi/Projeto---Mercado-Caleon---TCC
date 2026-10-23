@@ -3,6 +3,7 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { onAuthStateChanged } from 'firebase/auth';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { auth } from './Config/FireBaseConfig';
 import TelaHome from './Telas/home';
 import TelaSplash from './Telas/Splash';
@@ -12,12 +13,14 @@ import TelaFavorito from './Telas/Favoritos';
 import TelaSacola from './Telas/sacola';
 import TelaProdutos from './Telas/produto';
 import TelaPerfil from './Telas/Perfil';
+import HistoricoPedidosScreen from './Telas/HistoricoPedidosScreen';
 import ProdutosCategoriaScreen from './Telas/ProdutosCategoriaScreen';
 import DetalheProduto from './Telas/detalheproduto';
 import AdminHome from './TelasAdmin/AdminHome';
 import ControleEstoque from './TelasAdmin/controleEstoque';
 import AdminPedido from './TelasAdmin/AdminPedido';
 import AdminProdutos from './TelasAdmin/AdminProdutos';
+import AdminQrCode from './TelasAdmin/AdminQrCode';
 import TelaHomeAdmin from './TelasAdmin/tela home admin';
 import NotificacaoGlobal from './Componentes/NotificacaoGlobal';
 import { getHomeRouteByRole, getUserRole } from './src/utils/getUserRole';
@@ -80,6 +83,10 @@ function AdminProductsRoute({ navigation, route }) {
 	return <RoleProtectedScreen allowedRoles={['admin', 'employee']} Screen={AdminProdutos} navigation={navigation} route={route} />;
 }
 
+function AdminQrCodeRoute({ navigation, route }) {
+	return <RoleProtectedScreen allowedRoles={['admin', 'employee']} Screen={AdminQrCode} navigation={navigation} route={route} />;
+}
+
 function ControleEstoqueRoute({ navigation, route }) {
 	if (route?.params?.preview) return <ControleEstoque navigation={navigation} route={route} />;
 	return <RoleProtectedScreen allowedRoles={['admin', 'employee']} Screen={ControleEstoque} navigation={navigation} route={route} />;
@@ -116,46 +123,48 @@ export default function App() {
 		};
 	}, []);
 
-	if (!initialRouteName) {
-		return (
-			<View style={styles.loadingScreen} accessibilityLabel="Verificando sessão">
-				<ActivityIndicator size="large" color="#ffffff" />
-			</View>
-		);
-	}
-
 	return (
-		<View style={styles.appRoot}>
-			<NavigationContainer>
-				<Stack.Navigator initialRouteName={initialRouteName} screenOptions={{ headerShown: false }}>
-					<Stack.Screen name="TelaLogin" component={TelaLogin} />
-					<Stack.Screen name="TelaCadastro" component={TelaCadastro} />
-					<Stack.Screen name="TelaHome" component={TelaHome} />
-					<Stack.Screen name="TelaSplash" component={TelaSplash} />
-					<Stack.Screen name="TelaProdutos" component={TelaProdutos} />
-					<Stack.Screen name="ProdutosCategoriaScreen" component={ProdutosCategoriaScreen} />
-					<Stack.Screen name="TelaFavorito" component={TelaFavorito} />
-					<Stack.Screen name="TelaSacola" component={TelaSacola} />
-					<Stack.Screen name="TelaPerfil" component={TelaPerfil} />
-					<Stack.Screen name="TelaDetalheProduto" component={DetalheProduto} />
-					<Stack.Screen name="AdminHome" component={AdminHomeRoute} />
-					<Stack.Screen name="AdminPedido" component={AdminOrderRoute} />
-					<Stack.Screen name="AdminProdutos" component={AdminProductsRoute} />
-					<Stack.Screen name="ControleEstoque" component={ControleEstoqueRoute} />
-					<Stack.Screen
-						name="AdminCriarProduto"
-						component={AdminCreateProductRoute}
-						options={{
-							presentation: 'transparentModal',
-							animation: 'none',
-							contentStyle: { backgroundColor: 'transparent' },
-							gestureEnabled: false,
-						}}
-					/>
-				</Stack.Navigator>
-			</NavigationContainer>
-			<NotificacaoGlobal />
-		</View>
+		<SafeAreaProvider>
+			{!initialRouteName ? (
+				<View style={styles.loadingScreen} accessibilityLabel="Verificando sessão">
+					<ActivityIndicator size="large" color="#ffffff" />
+				</View>
+			) : (
+				<View style={styles.appRoot}>
+					<NavigationContainer>
+						<Stack.Navigator initialRouteName={initialRouteName} screenOptions={{ headerShown: false }}>
+							<Stack.Screen name="TelaLogin" component={TelaLogin} />
+							<Stack.Screen name="TelaCadastro" component={TelaCadastro} />
+							<Stack.Screen name="TelaHome" component={TelaHome} />
+							<Stack.Screen name="TelaSplash" component={TelaSplash} />
+							<Stack.Screen name="TelaProdutos" component={TelaProdutos} />
+							<Stack.Screen name="ProdutosCategoriaScreen" component={ProdutosCategoriaScreen} />
+							<Stack.Screen name="TelaFavorito" component={TelaFavorito} />
+							<Stack.Screen name="TelaSacola" component={TelaSacola} />
+							<Stack.Screen name="TelaPerfil" component={TelaPerfil} />
+							<Stack.Screen name="TelaHistoricoPedidos" component={HistoricoPedidosScreen} />
+							<Stack.Screen name="TelaDetalheProduto" component={DetalheProduto} />
+							<Stack.Screen name="AdminHome" component={AdminHomeRoute} />
+							<Stack.Screen name="AdminPedido" component={AdminOrderRoute} />
+							<Stack.Screen name="AdminProdutos" component={AdminProductsRoute} />
+							<Stack.Screen name="AdminQrCode" component={AdminQrCodeRoute} />
+							<Stack.Screen name="ControleEstoque" component={ControleEstoqueRoute} />
+							<Stack.Screen
+								name="AdminCriarProduto"
+								component={AdminCreateProductRoute}
+								options={{
+									presentation: 'transparentModal',
+									animation: 'none',
+									contentStyle: { backgroundColor: 'transparent' },
+									gestureEnabled: false,
+								}}
+							/>
+						</Stack.Navigator>
+					</NavigationContainer>
+					<NotificacaoGlobal />
+				</View>
+			)}
+		</SafeAreaProvider>
 	);
 }
 

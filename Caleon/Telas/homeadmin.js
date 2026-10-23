@@ -8,8 +8,9 @@ import {
 	TouchableOpacity,
 	View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import SafeAreaScreen from '../Componentes/SafeAreaScreen';
 import Feather from '@expo/vector-icons/Feather';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useFonts } from 'expo-font';
 import { auth } from '../Config/FireBaseConfig';
 import { getUserRole } from '../src/utils/getUserRole';
@@ -25,15 +26,15 @@ const COLORS = {
 
 const adminTabs = [
 	{ label: 'Início', icon: 'home', route: 'AdminHome' },
-	{ label: 'QrCode', icon: 'maximize', route: 'AdminQrCode' },
+	{ label: 'Leitor', icon: 'maximize', route: 'AdminQrCode' },
 	{ label: 'Adicionar', icon: 'plus', route: 'AdminCriarProduto' },
-	{ label: 'Catálogo', icon: 'clipboard', route: 'AdminProdutos' },
-	{ label: 'Configurações', icon: 'settings', route: 'AdminConfiguracoes' },
+	{ label: 'Catálogo', icon: 'clipboard-list-outline', activeIcon: 'clipboard-list', route: 'AdminProdutos' },
+	{ label: 'Configurações', icon: 'cog-outline', activeIcon: 'cog', route: 'AdminConfiguracoes' },
 ];
 
 const previewContent = {
 	Início: { title: 'Painel Administrativo', description: 'Ambiente de prototipação local.' },
-	QrCode: { title: 'QrCode', description: 'Área de leitura de códigos em preparação.' },
+	Leitor: { title: 'Leitor', description: 'Área de leitura de códigos em preparação.' },
 	Adicionar: { title: 'Adicionar', description: 'Área de cadastro de produtos em preparação.' },
 	Catálogo: { title: 'Catálogo', description: 'Área de produtos em preparação.' },
 	Configurações: { title: 'Configurações', description: 'Área de configurações em preparação.' },
@@ -97,7 +98,7 @@ export default function HomeAdmin({ navigation, previewMode = false }) {
 	const currentContent = previewContent[activeTab];
 
 	return (
-		<SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+		<SafeAreaScreen style={styles.safe} edges={['top', 'bottom']}>
 			<StatusBar barStyle="light-content" backgroundColor={COLORS.green} />
 			<View style={styles.header}>
 				<View style={styles.avatar}><Text style={styles.avatarLetter}>C</Text></View>
@@ -138,7 +139,15 @@ export default function HomeAdmin({ navigation, previewMode = false }) {
 							accessibilityLabel={tab.label}
 						>
 							<View style={[styles.iconBox, addTab && styles.addIconBox]}>
-								<Feather name={tab.icon} size={addTab ? 23 : 20} color={addTab ? COLORS.white : selected ? COLORS.active : COLORS.muted} />
+								{tab.label === 'Configurações' || tab.label === 'Catálogo' ? (
+									<MaterialCommunityIcons
+										name={selected && tab.activeIcon ? tab.activeIcon : tab.icon}
+										size={21}
+										color={COLORS.white}
+									/>
+								) : (
+									<Feather name={tab.icon} size={addTab ? 23 : 20} color={COLORS.white} />
+								)}
 							</View>
 							<Text style={[styles.tabLabel, selected && styles.selectedLabel, addTab && styles.addLabel]} numberOfLines={1}>
 								{tab.label}
@@ -147,7 +156,7 @@ export default function HomeAdmin({ navigation, previewMode = false }) {
 					);
 				})}
 			</View>
-		</SafeAreaView>
+		</SafeAreaScreen>
 	);
 }
 
@@ -168,8 +177,8 @@ const styles = StyleSheet.create({
 	previewBadge: { marginTop: 18, paddingHorizontal: 10, paddingVertical: 6, overflow: 'hidden', borderRadius: 6, backgroundColor: '#DDF5EC', color: COLORS.active, fontFamily: 'LilitaOne_400Regular', fontSize: 9 },
 	footer: { minHeight: 80, paddingHorizontal: 6, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', backgroundColor: COLORS.background, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#D5D9DB' },
 	tab: { flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center', gap: 3 },
-	iconBox: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-	addIconBox: { borderRadius: 8, backgroundColor: COLORS.active },
+	iconBox: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.mint },
+	addIconBox: { borderRadius: 20 },
 	tabLabel: { color: COLORS.muted, fontFamily: 'LilitaOne_400Regular', fontSize: 10 },
 	selectedLabel: { color: COLORS.active },
 	addLabel: { color: COLORS.active },

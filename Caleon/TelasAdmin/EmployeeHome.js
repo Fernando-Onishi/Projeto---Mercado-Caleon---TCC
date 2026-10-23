@@ -1,17 +1,18 @@
 import React, { useState } from 'react';
 import { signOut } from 'firebase/auth';
 import Feather from '@expo/vector-icons/Feather';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import {
 	ActivityIndicator,
 	Alert,
-	SafeAreaView,
 	StatusBar,
 	StyleSheet,
 	Text,
-	TouchableOpacity,
 	View,
 } from 'react-native';
 import { auth } from '../Config/FireBaseConfig';
+import SafeAreaScreen from '../Componentes/SafeAreaScreen';
+import CircularIconButton from '../Componentes/CircularIconButton';
 
 const COLORS = { green: '#1B4B3D', mint: '#40B190' };
 
@@ -33,7 +34,7 @@ export default function EmployeeHome({ navigation }) {
 	}
 
 	return (
-		<SafeAreaView style={styles.safe}>
+		<SafeAreaScreen style={styles.safe}>
 			<StatusBar barStyle="light-content" backgroundColor={COLORS.green} />
 			<View style={styles.header}>
 				<Text style={styles.title}>Painel da equipe</Text>
@@ -42,18 +43,19 @@ export default function EmployeeHome({ navigation }) {
 			<View style={styles.content}>
 				<Feather name="users" size={42} color={COLORS.mint} />
 				<Text style={styles.message}>Bem-vindo ao Caleon</Text>
-				<TouchableOpacity
-					style={styles.logoutButton}
-					onPress={handleSignOut}
-					disabled={isSigningOut}
-					accessibilityRole="button"
-					accessibilityLabel="Sair da conta"
-				>
-					{isSigningOut ? <ActivityIndicator color="#FFFFFF" /> : <Feather name="log-out" size={18} color="#FFFFFF" />}
+				<View style={styles.logoutAction}>
+					<CircularIconButton
+						icon={isSigningOut
+							? <ActivityIndicator color="#FFFFFF" />
+							: <Ionicons name="exit-outline" size={24} color="#FFFFFF" />}
+						onPress={handleSignOut}
+						disabled={isSigningOut}
+						accessibilityLabel="Sair da conta"
+					/>
 					<Text style={styles.logoutText}>{isSigningOut ? 'Saindo...' : 'Sair da conta'}</Text>
-				</TouchableOpacity>
+				</View>
 			</View>
-		</SafeAreaView>
+		</SafeAreaScreen>
 	);
 }
 
@@ -68,15 +70,10 @@ const styles = StyleSheet.create({
 	email: { marginTop: 6, color: '#C5DED6', fontSize: 13 },
 	content: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16 },
 	message: { color: '#183F35', fontSize: 18, fontWeight: '700' },
-	logoutButton: {
-		minHeight: 44,
-		paddingHorizontal: 18,
-		borderRadius: 12,
+	logoutAction: {
 		flexDirection: 'row',
 		alignItems: 'center',
-		justifyContent: 'center',
-		gap: 8,
-		backgroundColor: '#FF383C',
+		gap: 10,
 	},
-	logoutText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
+	logoutText: { color: COLORS.green, fontSize: 14, fontWeight: '700' },
 });

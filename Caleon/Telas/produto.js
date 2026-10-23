@@ -2,7 +2,6 @@ import React from 'react';
 import { useFonts } from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
 import {
-	SafeAreaView,
 	ScrollView,
 	StyleSheet,
 	Text,
@@ -13,6 +12,8 @@ import Feather from '@expo/vector-icons/Feather';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import BotaoSacola from '../Componentes/BotaoSacola';
 import NavegacaoInferior from '../Componentes/NavegacaoInferior';
+import SafeAreaScreen from '../Componentes/SafeAreaScreen';
+import CircularIconButton from '../Componentes/CircularIconButton';
 
 const COLORS = {
 	primaryDark: '#1B4B3D',
@@ -54,24 +55,23 @@ export default function TelaProdutos({ navigation, onBack }) {
 	}
 
 	return (
-		<SafeAreaView style={styles.safeArea}>
+		<SafeAreaScreen style={styles.safeArea}>
 			<StatusBar style="light" backgroundColor={COLORS.primaryDark} />
 			<View style={styles.topBand} />
 			<View style={styles.screenPanel}>
 				<View style={styles.header}>
 					<View style={styles.headerActions}>
-						<TouchableOpacity
+						<CircularIconButton
 							style={styles.backButton}
+							borderRadius={12}
+							icon={<Feather name="chevron-left" size={27} color={COLORS.white} />}
 							onPress={goBack}
-							activeOpacity={0.8}
-							accessibilityRole="button"
 							accessibilityLabel="Voltar"
-						>
-							<Feather name="chevron-left" size={27} color={COLORS.white} />
-						</TouchableOpacity>
+						/>
 						<BotaoSacola navigation={navigation} size={40} />
 					</View>
 					<Text style={styles.title}>Produtos</Text>
+					<Text style={styles.subtitle}>Categorias</Text>
 				</View>
 
 				<View style={styles.content}>
@@ -79,9 +79,6 @@ export default function TelaProdutos({ navigation, onBack }) {
 						showsVerticalScrollIndicator={false}
 						contentContainerStyle={styles.contentContainer}
 					>
-						<View style={styles.sectionHeading}>
-							<Text style={styles.sectionTitle}>Categorias</Text>
-						</View>
 						<View style={styles.categoriesGrid}>
 							{categories.map((category) => (
 								<TouchableOpacity
@@ -110,7 +107,7 @@ export default function TelaProdutos({ navigation, onBack }) {
 
 				<NavegacaoInferior activeTab="Catálogo" navigation={navigation} />
 			</View>
-		</SafeAreaView>
+		</SafeAreaScreen>
 	);
 }
 
@@ -132,7 +129,7 @@ const styles = StyleSheet.create({
 		overflow: 'hidden',
 	},
 	header: {
-		height: 116,
+		height: 132,
 		alignItems: 'center',
 		paddingTop: 15,
 	},
@@ -163,16 +160,15 @@ const styles = StyleSheet.create({
 	},
 	contentContainer: {
 		paddingHorizontal: 20,
-		paddingTop: 25,
+		paddingTop: 71,
 		paddingBottom: 22,
 	},
-	sectionHeading: {
-		marginBottom: 17,
-	},
-	sectionTitle: {
-		color: COLORS.black,
-		fontFamily: 'LilitaOne_400Regular',
-		fontSize: 24,
+	subtitle: {
+		marginTop: 1,
+		color: '#226842',
+		fontFamily: 'Montserrat_700Bold',
+		fontSize: 18,
+		textAlign: 'center',
 	},
 	categoriesGrid: {
 		flexDirection: 'row',
