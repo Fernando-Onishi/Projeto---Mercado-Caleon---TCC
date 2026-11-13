@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useFonts } from 'expo-font';
 import { onAuthStateChanged } from 'firebase/auth';
+import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
+	ActivityIndicator,
 	Alert,
 	Animated,
 	FlatList,
@@ -24,8 +26,9 @@ import {
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import Feather from '@expo/vector-icons/Feather';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { collection, onSnapshot, orderBy, query, where } from 'firebase/firestore';
-import { auth, db } from '../Config/FireBaseConfig';
+import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
+import { deleteObject, getDownloadURL, ref, uploadBytes } from 'firebase/storage';
+import { auth, db, storage } from '../Config/FireBaseConfig';
 import BotaoSacola from '../Componentes/BotaoSacola';
 import { getProfileStorageKey } from '../Config/PerfilStorage';
 import { formatCurrency, formatProductUnit, getProductPrice, PRODUCTS } from '../Config/Produtos';
@@ -41,6 +44,7 @@ import CircularIconButton from '../Componentes/CircularIconButton';
 import { publishSacolaCount } from '../Componentes/useSacolaCount';
 import { showGlobalNotification } from '../Componentes/NotificacaoGlobal';
 import SafeAreaScreen from '../Componentes/SafeAreaScreen';
+import { getUserRole } from '../src/utils/getUserRole';
 
 const colors = {
 	green: '#1B4B3D',
@@ -146,31 +150,36 @@ function formatCep(value) {
 }
 
 function ProductCard({ product, width, onOpen, onToggleCart, onToggleFavorite, isFavorite, isInCart }) {
-	const scale = width / 160;
+	const scale = width / 130;
 
 	return (
 		<View style={[styles.productCard, {
 			width,
-			height: width * 1.12,
-			padding: width * 0.055,
-			borderRadius: width * 0.085,
+			padding: width * 0.07,
+			borderRadius: width * 0.1,
 		}]}>
-			<TouchableOpacity style={styles.productMain} onPress={onOpen} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel={`Ver detalhes de ${product.name}`}>
+			<TouchableOpacity onPress={onOpen} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel={`Ver detalhes de ${product.name}`}>
 				<View style={[styles.productImage, {
-					height: width * 0.48,
-					borderRadius: width * 0.055,
+					height: width * 0.56,
+					borderRadius: width * 0.06,
 				}]}>
+					<Image source={{ uri: product.imageUrl }} style={styles.productImageContent} resizeMode="contain" />
 					{product.discount ? <Text style={[styles.discount, {
 						left: 2 * scale,
-						top: 3 * scale,
+						top: 2 * scale,
 						fontSize: 9 * scale,
-						paddingHorizontal: 6 * scale,
-						paddingVertical: 3 * scale,
-						borderRadius: 16 * scale,
+						paddingHorizontal: 5 * scale,
+						paddingVertical: 2 * scale,
+						borderRadius: 15 * scale,
 					}]}>{product.discount}</Text> : null}
-					<Image source={{ uri: product.imageUrl }} style={styles.productImageContent} resizeMode="contain" />
 					<TouchableOpacity
-						style={[styles.heartButton, isFavorite && styles.heartButtonActive]}
+						style={[styles.heartButton, isFavorite && styles.heartButtonActive, {
+							right: width * 0.06,
+							top: width * 0.06,
+							width: width * 0.15,
+							height: width * 0.15,
+							borderRadius: width * 0.075,
+						}]}
 						onPress={(event) => { event.stopPropagation(); onToggleFavorite(product.id); }}
 						accessibilityRole="button"
 						accessibilityLabel={`${isFavorite ? 'Remover' : 'Adicionar'} ${product.name} ${isFavorite ? 'dos' : 'aos'} favoritos`}
@@ -182,11 +191,11 @@ function ProductCard({ product, width, onOpen, onToggleCart, onToggleFavorite, i
 						/>
 					</TouchableOpacity>
 				</View>
-				<Text style={[styles.productName, { fontSize: 11 * scale, marginTop: 7 * scale }]} numberOfLines={1}>
+				<Text style={[styles.productName, { fontSize: 12 * scale, marginTop: 6 * scale }]} numberOfLines={1}>
 					{product.name} <Text style={[styles.weight, { fontSize: 8 * scale }]}>{product.weight}</Text>
 				</Text>
-				<View style={styles.priceRow}>
-					<Text style={[styles.price, { fontSize: 16 * scale, marginTop: 2 * scale }]}>{product.price}</Text>
+				<View style={[styles.priceRow, { marginTop: 1 * scale }]}>
+					<Text style={[styles.price, { fontSize: 18 * scale, marginTop: 0 }]}>{product.price}</Text>
 					{product.originalPrice ? (
 						<Text style={[styles.originalPrice, { fontSize: 8 * scale }]}>
 							{product.originalPrice}
@@ -196,17 +205,17 @@ function ProductCard({ product, width, onOpen, onToggleCart, onToggleFavorite, i
 			</TouchableOpacity>
 			<TouchableOpacity
 				style={[styles.addButton, isInCart && styles.addedButton, {
-					height: width * 0.18,
-					borderRadius: width * 0.055,
-					marginTop: width * 0.035,
+					height: width * 0.16,
+					borderRadius: width * 0.06,
+					marginTop: width * 0.02,
 				}]}
 				activeOpacity={0.8}
 				onPress={() => onToggleCart(product, isInCart)}
 				accessibilityRole="button"
 				accessibilityLabel={`${product.name}, ${isInCart ? 'remover da' : 'adicionar à'} sacola`}
 			>
-				<MaterialCommunityIcons name={isInCart ? 'shopping' : 'shopping-outline'} size={12 * scale} color={colors.white} />
-				<Text style={[styles.addButtonText, { fontSize: 8 * scale }]}>
+				<MaterialCommunityIcons name={isInCart ? 'shopping' : 'shopping-outline'} size={11 * scale} color={colors.white} />
+				<Text style={[styles.addButtonText, { fontSize: 8.8 * scale }]}>
 					{isInCart ? 'Adicionado' : 'Adicionar à sacola'}
 				</Text>
 			</TouchableOpacity>
@@ -218,7 +227,7 @@ function ProductSection({ title, products: sectionProducts, cardWidth, navigatio
 	return (
 		<View style={styles.section}>
 			<View style={styles.sectionHeader}>
-				<Text style={styles.sectionTitle}>{title}</Text>
+				<Text style={[styles.sectionTitle, ['Em Destaque', 'Em Promoção', 'Produtos'].includes(title) && styles.productSectionTitle]}>{title}</Text>
 				<TouchableOpacity>
 					<Text style={styles.seeAll}>Ver mais ›</Text>
 				</TouchableOpacity>
@@ -237,6 +246,18 @@ function ProductSection({ title, products: sectionProducts, cardWidth, navigatio
 					/>
 				))}
 			</ScrollView>
+		</View>
+	);
+}
+
+function EmptyProductsState() {
+	return (
+		<View style={styles.emptyProducts}>
+			<Feather name="search" size={40} color="#9CA3AF" />
+			<Text style={styles.emptyProductsTitle}>Nenhum produto encontrado</Text>
+			<Text style={styles.emptyProductsDescription}>
+				Não há produtos disponíveis nesta categoria ou busca no momento.
+			</Text>
 		</View>
 	);
 }
@@ -279,7 +300,7 @@ function BannerSlide({ banner, width, onPress }) {
 	);
 }
 
-function BannerCarousel({ banners, width, onBannerPress }) {
+function BannerCarousel({ banners, width, onBannerPress, isAdmin, isUpdatingBanner, onEditBanner }) {
 	const [activeIndex, setActiveIndex] = useState(0);
 
 	useEffect(() => {
@@ -323,6 +344,20 @@ function BannerCarousel({ banners, width, onBannerPress }) {
 					/>
 				)}
 			/>
+			{isAdmin ? (
+				<TouchableOpacity
+					style={styles.editBannerButton}
+					onPress={() => onEditBanner(banners[activeIndex])}
+					disabled={isUpdatingBanner}
+					activeOpacity={0.7}
+					accessibilityRole="button"
+					accessibilityLabel="Alterar banner exibido"
+				>
+					{isUpdatingBanner
+						? <ActivityIndicator size="small" color={colors.white} />
+						: <Feather name="edit-2" size={17} color={colors.white} />}
+				</TouchableOpacity>
+			) : null}
 			{banners.length > 1 ? (
 				<View style={styles.promoDots} accessibilityLabel={`Banner ${activeIndex + 1} de ${banners.length}`}>
 					{banners.map((banner, index) => (
@@ -416,7 +451,7 @@ const catalogStyles = StyleSheet.create({
 export default function Home({ navigation, route }) {
 	const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 	const insets = useSafeAreaInsets();
-	const productCardWidth = Math.min(184, Math.max(154, windowWidth * 0.43));
+	const productCardWidth = 160;
 	const [fontsLoaded] = useFonts({
 		Lalezar_400Regular: require('@expo-google-fonts/lalezar/400Regular/Lalezar_400Regular.ttf'),
 		LilitaOne_400Regular: require('@expo-google-fonts/lilita-one/400Regular/LilitaOne_400Regular.ttf'),
@@ -435,9 +470,12 @@ export default function Home({ navigation, route }) {
 	const [selectedCategories, setSelectedCategories] = useState(['HortiFruti']);
 	const [priceSortDirection, setPriceSortDirection] = useState(null);
 	const [promoBanners, setPromoBanners] = useState([]);
+	const [isAdmin, setIsAdmin] = useState(false);
+	const [isUpdatingBanner, setIsUpdatingBanner] = useState(false);
 	const [products, setProducts] = useState(initialProducts);
 	const [favoriteIds, setFavoriteIds] = useState([]);
 	const [cartProductIds, setCartProductIds] = useState([]);
+	const bannerUpdateInProgress = useRef(false);
 	const pendingCartProductIds = useRef(new Set());
 	const filterSheetTranslateY = useRef(new Animated.Value(0)).current;
 	const promoBannerWidth = Math.max(0, windowWidth - 36);
@@ -467,11 +505,38 @@ export default function Home({ navigation, route }) {
 		);
 	}, []);
 
+	useEffect(() => {
+		let active = true;
+		let latestRoleRequest = 0;
+		const unsubscribe = onAuthStateChanged(auth, async (user) => {
+			const request = ++latestRoleRequest;
+			if (!user) {
+				if (active) setIsAdmin(false);
+				return;
+			}
+			try {
+				const role = await getUserRole(user);
+				if (active && request === latestRoleRequest) setIsAdmin(role === 'admin');
+			} catch (error) {
+				console.error('Não foi possível verificar o papel do usuário na Home.', error);
+				if (active && request === latestRoleRequest) setIsAdmin(false);
+			}
+		});
+		return () => {
+			active = false;
+			unsubscribe();
+		};
+	}, []);
+
 	useEffect(() => onSnapshot(
 		collection(db, 'products'),
 		(snapshot) => {
 			const mergedProducts = new Map(initialProducts.map((product) => [product.id, product]));
 			snapshot.docs.forEach((productDocument) => {
+				if (productDocument.data().active === false) {
+					mergedProducts.delete(productDocument.id);
+					return;
+				}
 				const product = mapStoredProduct(productDocument);
 				if (product) mergedProducts.set(product.id, product);
 			});
@@ -737,8 +802,89 @@ export default function Home({ navigation, route }) {
 		}
 	}
 
+	async function handleEditBanner(banner) {
+		if (bannerUpdateInProgress.current) return;
+		if (!banner?.id) {
+			Alert.alert('Banner promocional', 'Não foi possível identificar o banner selecionado.');
+			return;
+		}
+
+		try {
+			const user = auth.currentUser;
+			if (!user || await getUserRole(user) !== 'admin') {
+				setIsAdmin(false);
+				Alert.alert('Acesso restrito', 'Somente um administrador pode alterar os banners.');
+				return;
+			}
+
+			const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+			if (!permission.granted) {
+				Alert.alert('Permissão necessária', 'Permita o acesso à galeria para selecionar o banner.');
+				return;
+			}
+
+			const result = await ImagePicker.launchImageLibraryAsync({
+				mediaTypes: ['images'],
+				allowsEditing: true,
+				quality: 0.85,
+			});
+			if (result.canceled) return;
+
+			const image = result.assets?.[0];
+			if (!image?.uri) {
+				Alert.alert('Banner promocional', 'Não foi possível carregar a imagem selecionada.');
+				return;
+			}
+
+			bannerUpdateInProgress.current = true;
+			setIsUpdatingBanner(true);
+			const extension = image.mimeType?.split('/')[1];
+			const imageRef = ref(
+				storage,
+				`banners/${banner.id}/${Date.now()}.${extension === 'png' || extension === 'webp' ? extension : 'jpg'}`,
+			);
+			let uploaded = false;
+			try {
+				const response = await fetch(image.uri);
+				if (!response.ok) throw new Error('Não foi possível ler a imagem selecionada.');
+				const blob = await response.blob();
+				try {
+					await uploadBytes(imageRef, blob, { contentType: image.mimeType || 'image/jpeg' });
+				} finally {
+					if (typeof blob.close === 'function') blob.close();
+				}
+				uploaded = true;
+				const imageUrl = await getDownloadURL(imageRef);
+				await updateDoc(doc(db, 'banners', banner.id), {
+					imageUrl,
+					updatedAt: serverTimestamp(),
+				});
+				setPromoBanners((currentBanners) => currentBanners.map((currentBanner) => (
+					currentBanner.id === banner.id
+						? { ...currentBanner, imageUrl }
+						: currentBanner
+				)));
+			} catch (error) {
+				if (uploaded) {
+					try {
+						await deleteObject(imageRef);
+					} catch (cleanupError) {
+						console.error('Não foi possível remover o upload incompleto do banner.', cleanupError);
+					}
+				}
+				throw error;
+			}
+		} catch (error) {
+			console.error('Não foi possível atualizar o banner promocional.', error);
+			Alert.alert('Banner promocional', 'Não foi possível atualizar o banner. Tente novamente.');
+		} finally {
+			bannerUpdateInProgress.current = false;
+			setIsUpdatingBanner(false);
+		}
+	}
+
 	return (
-		<SafeAreaScreen style={styles.safeArea} edges={['bottom']}>
+		<SafeAreaScreen style={styles.safeArea} edges={[]}>
 			<StatusBar backgroundColor={colors.green} barStyle="light-content" />
 			<ScrollView
 				style={styles.screenScroll}
@@ -782,41 +928,45 @@ export default function Home({ navigation, route }) {
 							accessibilityLabel="Pesquisar produtos e categorias"
 						/>
 					</View>
-					{!isSearching && (
-						<>
-							<BannerCarousel
-								banners={promoBanners}
-								width={promoBannerWidth}
-								onBannerPress={handleBannerPress}
-							/>
-							<ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesRow}>
-								{filterOptions.map((option) => (
-									<TouchableOpacity
-										key={option.name}
-										style={[styles.category, isFilterSelected(option) && styles.selectedCategory]}
-										onPress={() => selectFilter(option)}
-										accessibilityRole="button"
-										accessibilityState={{ selected: isFilterSelected(option) }}
-									>
-										<Text style={styles.categoryText}>
-											{option.type === 'price'
-												? `Preço ${priceSortDirection === 'ascending' ? '↑' : priceSortDirection === 'descending' ? '↓' : ''}`
-												: option.name}
-										</Text>
-									</TouchableOpacity>
-								))}
-								<TouchableOpacity
-									style={styles.categoryFilter}
-									onPress={() => setIsFilterModalVisible(true)}
-									activeOpacity={0.8}
-									accessibilityRole="button"
-									accessibilityLabel="Abrir filtros de produtos"
-								>
-									<Feather name="sliders" size={17} color={colors.white} />
-								</TouchableOpacity>
-							</ScrollView>
-						</>
-					)}
+					<BannerCarousel
+						banners={promoBanners}
+						width={promoBannerWidth}
+						onBannerPress={handleBannerPress}
+						isAdmin={isAdmin}
+						isUpdatingBanner={isUpdatingBanner}
+						onEditBanner={handleEditBanner}
+					/>
+					<ScrollView
+						horizontal
+						style={styles.categoriesBar}
+						showsHorizontalScrollIndicator={false}
+						contentContainerStyle={styles.categoriesRow}
+					>
+						<TouchableOpacity
+							style={styles.categoryFilter}
+							onPress={() => setIsFilterModalVisible(true)}
+							activeOpacity={0.8}
+							accessibilityRole="button"
+							accessibilityLabel="Abrir filtros de produtos"
+						>
+							<Feather name="sliders" size={17} color={colors.white} />
+						</TouchableOpacity>
+						{filterOptions.map((option) => (
+							<TouchableOpacity
+								key={option.name}
+								style={[styles.category, isFilterSelected(option) && styles.selectedCategory]}
+								onPress={() => selectFilter(option)}
+								accessibilityRole="button"
+								accessibilityState={{ selected: isFilterSelected(option) }}
+							>
+								<Text style={styles.categoryText}>
+									{option.type === 'price'
+										? `Preço ${priceSortDirection === 'ascending' ? '↑' : priceSortDirection === 'descending' ? '↓' : ''}`
+										: option.name}
+								</Text>
+							</TouchableOpacity>
+						))}
+					</ScrollView>
 					<View style={styles.scrollContent}>
 						{isSearching ? (
 							<>
@@ -832,7 +982,7 @@ export default function Home({ navigation, route }) {
 										</View>
 									</View>
 								)}
-								{matchingProducts.length > 0 && (
+								{matchingProducts.length > 0 ? (
 									<ProductSection
 										title="Produtos encontrados"
 										products={matchingProducts}
@@ -843,9 +993,8 @@ export default function Home({ navigation, route }) {
 										onToggleFavorite={handleToggleFavorite}
 										onToggleCart={handleToggleCart}
 									/>
-								)}
-								{matchingCategories.length === 0 && matchingProducts.length === 0 && (
-									<Text style={styles.noSearchResults}>Nenhum produto ou categoria encontrado.</Text>
+								) : (
+									<EmptyProductsState />
 								)}
 							</>
 						) : (
@@ -857,7 +1006,7 @@ export default function Home({ navigation, route }) {
 										<ProductSection title="Produtos" products={displayedCategoryProducts} cardWidth={productCardWidth} navigation={navigation} favoriteIds={favoriteIds} cartProductIds={cartProductIds} onToggleFavorite={handleToggleFavorite} onToggleCart={handleToggleCart} />
 									</>
 								) : (
-									<Text style={styles.noSearchResults}>Ainda não há produtos nesta categoria.</Text>
+									<EmptyProductsState />
 								)}
 							</>
 						)}
@@ -1010,6 +1159,7 @@ export default function Home({ navigation, route }) {
 			</Modal>
 
 			<NavegacaoInferior activeTab="Início" navigation={navigation} />
+			<View style={[styles.safeAreaBottom, { height: insets.bottom }]} />
 		</SafeAreaScreen>
 	);
 }
@@ -1019,6 +1169,9 @@ const styles = StyleSheet.create({
 		flex: 1,
 		backgroundColor: '#194B38',
 	},
+	safeAreaBottom: {
+		backgroundColor: '#F1F3F5',
+	},
 	screenScroll: {
 		flex: 1,
 	},
@@ -1026,7 +1179,8 @@ const styles = StyleSheet.create({
 		flexGrow: 1,
 	},
 	contentArea: {
-		flexGrow: 1,
+		flex: 1,
+		justifyContent: 'flex-start',
 		paddingTop: 18,
 		paddingBottom: 12,
 		backgroundColor: '#F1F3F5',
@@ -1034,42 +1188,44 @@ const styles = StyleSheet.create({
 		borderTopLeftRadius: 28,
 	},
 	header: {
-		minHeight: 140,
+		minHeight: 116,
 		backgroundColor: '#194B38',
 		flexDirection: 'row',
 		alignItems: 'center',
-		paddingHorizontal: 16,
-		paddingBottom: 30,
+		paddingHorizontal: 18,
+		paddingBottom: 16,
 	},
 	locationIcon: {
-		width: 50,
-		height: 50,
-		borderRadius: 16,
+		width: 46,
+		height: 46,
+		borderRadius: 14,
 		backgroundColor: '#40B190',
 		alignItems: 'center',
 		justifyContent: 'center',
 	},
 	locationText: {
 		flex: 1,
-		marginLeft: 9,
+		marginLeft: 10,
 	},
 	greeting: {
 		color: colors.white,
 		fontFamily: 'Montserrat_700Bold',
-		fontSize: 19,
-		lineHeight: 24,
+		fontSize: 18,
+		lineHeight: 22,
 	},
 	address: {
 		color: colors.white,
 		fontFamily: 'Montserrat_700Bold',
-		fontSize: 14,
-		lineHeight: 18,
+		fontSize: 12,
+		lineHeight: 16,
+		marginTop: 2,
 	},
 	editCep: {
 		color: '#35D59A',
 		fontFamily: 'Montserrat_500Medium',
-		fontSize: 12,
-		lineHeight: 16,
+		fontSize: 11,
+		lineHeight: 15,
+		marginTop: 2,
 	},
 	modalBackdrop: {
 		flex: 1,
@@ -1150,16 +1306,19 @@ const styles = StyleSheet.create({
 	},
 
 	searchBox: {
-		height: 48,
+		height: 46,
 		marginHorizontal: 18,
-		borderRadius: 15,
-		backgroundColor: '#E5EAE8',
+		borderRadius: 16,
+		backgroundColor: '#E8ECEB',
 		flexDirection: 'row',
 		alignItems: 'center',
 		paddingHorizontal: 14,
+		borderWidth: 1,
+		borderColor: '#DCE3E0',
 	},
 	searchIcon: {
-		marginRight: 7,
+		marginRight: 8,
+		color: '#3D4A46',
 	},
 	searchInput: {
 		flex: 1,
@@ -1169,9 +1328,27 @@ const styles = StyleSheet.create({
 		paddingVertical: 0,
 	},
 	promoCarousel: {
-		marginTop: 12,
+		marginTop: 14,
 		marginHorizontal: 18,
 		marginBottom: 16,
+		position: 'relative',
+	},
+	editBannerButton: {
+		position: 'absolute',
+		top: 12,
+		right: 12,
+		zIndex: 1,
+		width: 42,
+		height: 42,
+		borderRadius: 21,
+		backgroundColor: colors.lightGreen,
+		alignItems: 'center',
+		justifyContent: 'center',
+		shadowColor: '#000000',
+		shadowOffset: { width: 0, height: 2 },
+		shadowOpacity: 0.25,
+		shadowRadius: 4,
+		elevation: 4,
 	},
 	promoEmptyState: {
 		minHeight: 116,
@@ -1232,18 +1409,23 @@ const styles = StyleSheet.create({
 		width: 16,
 		backgroundColor: colors.green,
 	},
+	categoriesBar: {
+		height: 34,
+		flexGrow: 0,
+		flexShrink: 0,
+		marginTop: 16,
+		marginBottom: 16,
+	},
 	categoriesRow: {
 		paddingHorizontal: 18,
 		gap: 8,
-		paddingVertical: 12,
-		marginBottom: 8,
 		alignItems: 'center',
 	},
 	categoryFilter: {
-		width: 50,
-		height: 36,
+		width: 44,
+		height: 34,
 		backgroundColor: colors.green,
-		borderRadius: 20,
+		borderRadius: 18,
 		alignItems: 'center',
 		justifyContent: 'center',
 	},
@@ -1330,11 +1512,11 @@ const styles = StyleSheet.create({
 		fontSize: 13,
 	},
 	category: {
-		backgroundColor: colors.green,
+		backgroundColor: '#1D6A56',
 		paddingHorizontal: 14,
-		height: 38,
+		height: 34,
 		justifyContent: 'center',
-		borderRadius: 12,
+		borderRadius: 18,
 	},
 	selectedCategory: {
 		backgroundColor: '#40B190',
@@ -1342,11 +1524,31 @@ const styles = StyleSheet.create({
 	categoryText: {
 		color: colors.white,
 		fontFamily: 'Montserrat_700Bold',
-		fontSize: 12,
+		fontSize: 11,
 	},
 
 	scrollContent: {
+		flex: 1,
 		paddingBottom: 18,
+	},
+	emptyProducts: {
+		flex: 1,
+		justifyContent: 'center',
+		alignItems: 'center',
+		paddingHorizontal: 24,
+	},
+	emptyProductsTitle: {
+		marginTop: 12,
+		color: '#1B4B3D',
+		fontFamily: 'Montserrat_700Bold',
+		fontSize: 16,
+	},
+	emptyProductsDescription: {
+		marginTop: 4,
+		color: '#6B7280',
+		fontFamily: 'Montserrat_400Regular',
+		fontSize: 13,
+		textAlign: 'center',
 	},
 	searchResults: {
 		paddingHorizontal: 18,
@@ -1358,27 +1560,23 @@ const styles = StyleSheet.create({
 		gap: 6,
 		marginTop: 8,
 	},
-	noSearchResults: {
-		color: colors.muted,
-		fontFamily: 'Montserrat_400Regular',
-		fontSize: 13,
-		marginHorizontal: 18,
-		marginTop: 14,
-	},
 	section: {
-		marginTop: 8,
+		marginTop: 6,
 	},
 	sectionHeader: {
 		flexDirection: 'row',
 		alignItems: 'center',
 		justifyContent: 'space-between',
 		paddingHorizontal: 18,
-		marginBottom: 9,
+		marginBottom: 10,
 	},
 	sectionTitle: {
 		color: colors.ink,
 		fontFamily: 'LilitaOne_400Regular',
 		fontSize: 18,
+	},
+	productSectionTitle: {
+		fontSize: 22,
 	},
 	seeAll: {
 		color: '#656f6c',
@@ -1386,41 +1584,32 @@ const styles = StyleSheet.create({
 		fontSize: 11,
 	},
 	productsRow: {
-		gap: 10,
+		alignItems: 'flex-start',
+		gap: 8,
 		paddingHorizontal: 18,
 		paddingBottom: 12,
 	},
 	productCard: {
-		width: 165,
-		minHeight: 232,
-		padding: 10,
 		backgroundColor: '#FFFFFF',
-		borderRadius: 14,
-		borderWidth: StyleSheet.hairlineWidth,
-		borderColor: '#E1E7E4',
-	},
-	productMain: {
-		flex: 1,
+		elevation: 3,
+		shadowColor: '#000000',
+		shadowOffset: { width: 0, height: 2 },
+		shadowOpacity: 0.1,
+		shadowRadius: 6,
 	},
 	productImage: {
-		height: 96,
-		backgroundColor: '#F7F9F8',
-		borderRadius: 10,
+		backgroundColor: colors.white,
+		borderRadius: 12,
 		alignItems: 'center',
 		justifyContent: 'center',
 		overflow: 'hidden',
 	},
 	productImageContent: {
-		width: '76%',
+		width: '84%',
 		height: '100%',
 	},
 	heartButton: {
 		position: 'absolute',
-		right: 5,
-		top: 5,
-		width: 28,
-		height: 28,
-		borderRadius: 14,
 		backgroundColor: '#1B4B3D',
 		alignItems: 'center',
 		justifyContent: 'center',
@@ -1430,32 +1619,21 @@ const styles = StyleSheet.create({
 	},
 	discount: {
 		position: 'absolute',
-		left: 2,
-		top: 3,
-		backgroundColor: '#FF0000',
+		backgroundColor: '#FF3B30',
 		color: colors.white,
 		fontFamily: 'LilitaOne_400Regular',
-		fontSize: 9,
-		paddingHorizontal: 3,
-		paddingVertical: 3,
-		borderRadius: 3,
 	},
 	productName: {
 		color: colors.green,
 		fontFamily: 'Montserrat_700Bold',
-		fontSize: 10,
-		marginTop: 4,
 	},
 	weight: {
 		color: '#7e8985',
 		fontFamily: 'Montserrat_400Regular',
-		fontSize: 7,
 	},
 	price: {
 		color: colors.green,
 		fontFamily: 'LilitaOne_400Regular',
-		fontSize: 12,
-		marginTop: 1,
 	},
 	priceRow: {
 		flexDirection: 'row',
@@ -1469,16 +1647,11 @@ const styles = StyleSheet.create({
 		marginTop: 1,
 	},
 	addButton: {
-		height: 36,
-		borderRadius: 10,
 		backgroundColor: colors.green,
 		flexDirection: 'row',
-		borderWidth: 1,
-		borderColor: 'transparent',
 		alignItems: 'center',
 		justifyContent: 'center',
-		gap: 3,
-		marginTop: 8,
+		gap: 4,
 	},
 	addedButton: {
 		backgroundColor: colors.lightGreen,
@@ -1487,7 +1660,6 @@ const styles = StyleSheet.create({
 	addButtonText: {
 		color: colors.white,
 		fontFamily: 'Montserrat_500Medium',
-		fontSize: 9,
 	},
 
 });

@@ -14,6 +14,7 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useFonts } from 'expo-font';
 import { auth } from '../Config/FireBaseConfig';
 import { getUserRole } from '../src/utils/getUserRole';
+import { useProductModal } from '../Componentes/ProductModalContext';
 
 const COLORS = {
 	green: '#1B4B3D',
@@ -27,8 +28,8 @@ const COLORS = {
 const adminTabs = [
 	{ label: 'Início', icon: 'home', route: 'AdminHome' },
 	{ label: 'Leitor', icon: 'maximize', route: 'AdminQrCode' },
-	{ label: 'Adicionar', icon: 'plus', route: 'AdminCriarProduto' },
-	{ label: 'Catálogo', icon: 'clipboard-list-outline', activeIcon: 'clipboard-list', route: 'AdminProdutos' },
+	{ label: 'Adicionar', icon: 'plus', action: 'addProduct' },
+	{ label: 'Catálogo', icon: 'clipboard-list-outline', activeIcon: 'clipboard-list', route: 'ControleEstoque' },
 	{ label: 'Configurações', icon: 'cog-outline', activeIcon: 'cog', route: 'AdminConfiguracoes' },
 ];
 
@@ -46,6 +47,7 @@ export default function HomeAdmin({ navigation, previewMode = false }) {
 	});
 	const [authorized, setAuthorized] = useState(previewMode);
 	const [activeTab, setActiveTab] = useState('Início');
+	const { openProductModal } = useProductModal();
 
 	useEffect(() => {
 		if (previewMode) {
@@ -75,6 +77,10 @@ export default function HomeAdmin({ navigation, previewMode = false }) {
 	function handleTabPress(route, label) {
 		if (previewMode) {
 			setActiveTab(label);
+			return;
+		}
+		if (label === 'Adicionar') {
+			openProductModal({});
 			return;
 		}
 

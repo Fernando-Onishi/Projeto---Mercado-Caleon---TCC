@@ -41,13 +41,13 @@ export default function EmployeeHome({ navigation }) {
 				<Text style={styles.email}>{auth.currentUser?.email || ''}</Text>
 			</View>
 			<View style={styles.content}>
-				<Feather name="users" size={42} color={COLORS.mint} />
+				<Feather name="users" size={48} color={COLORS.mint} />
 				<Text style={styles.message}>Bem-vindo ao Caleon</Text>
 				<View style={styles.logoutAction}>
 					<CircularIconButton
 						icon={isSigningOut
 							? <ActivityIndicator color="#FFFFFF" />
-							: <Ionicons name="exit-outline" size={24} color="#FFFFFF" />}
+							: <Ionicons name="exit-outline" size={30} color="#FFFFFF" />}
 						onPress={handleSignOut}
 						disabled={isSigningOut}
 						accessibilityLabel="Sair da conta"

@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react';
+import { useFonts } from 'expo-font';
 import {
 	ActivityIndicator,
 	StatusBar,
@@ -13,13 +14,10 @@ import { useIsFocused } from '@react-navigation/native';
 import Feather from '@expo/vector-icons/Feather';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import CircularIconButton from '../Componentes/CircularIconButton';
+import NavegacaoAdmin from '../Componentes/NavegacaoAdmin';
+import { ADMIN_THEME } from '../Config/AdminTheme';
 
-const COLORS = {
-	green: '#1B4B3D',
-	mint: '#40B190',
-	background: '#F1F3F5',
-	white: '#FFFFFF',
-};
+const COLORS = ADMIN_THEME.colors;
 
 const BARCODE_TYPES = {
 	qrcode: ['qr'],
@@ -32,6 +30,11 @@ function formatBarcodeType(type) {
 }
 
 export default function AdminQrCode({ navigation }) {
+	useFonts({
+		LilitaOne_400Regular: require('@expo-google-fonts/lilita-one/400Regular/LilitaOne_400Regular.ttf'),
+		Montserrat_400Regular: require('@expo-google-fonts/montserrat/400Regular/Montserrat_400Regular.ttf'),
+		Montserrat_700Bold: require('@expo-google-fonts/montserrat/700Bold/Montserrat_700Bold.ttf'),
+	});
 	const { height, width } = useWindowDimensions();
 	const insets = useSafeAreaInsets();
 	const isFocused = useIsFocused();
@@ -90,31 +93,37 @@ export default function AdminQrCode({ navigation }) {
 
 	if (!permission) {
 		return (
-			<View style={styles.permissionScreen}>
-				<ActivityIndicator size="large" color={COLORS.mint} />
-				<Text style={styles.permissionMessage}>Verificando permissão da câmera...</Text>
+			<View style={styles.permissionRoot}>
+				<View style={styles.permissionScreen}>
+					<ActivityIndicator size="large" color={COLORS.mint} />
+					<Text style={styles.permissionMessage}>Verificando permissão da câmera...</Text>
+				</View>
+				<View style={[styles.bottomNavigation, { paddingBottom: insets.bottom }]}><NavegacaoAdmin navigation={navigation} activeTab="QR Code" /></View>
 			</View>
 		);
 	}
 
 	if (!permission.granted) {
 		return (
-			<View style={styles.permissionScreen}>
-				<StatusBar barStyle="light-content" backgroundColor={COLORS.green} />
-				<CircularIconButton
-					style={[styles.permissionBack, { top: insets.top + 12 }]}
-					icon={<Feather name="chevron-left" size={27} color={COLORS.white} />}
-					onPress={() => navigation.goBack()}
-					accessibilityLabel="Voltar"
-				/>
-				<Feather name="camera-off" size={48} color={COLORS.mint} />
-				<Text style={styles.permissionTitle}>Permissão da câmera</Text>
-				<Text style={styles.permissionMessage}>
-					Permita o acesso à câmera para ler QR Codes e códigos de barras.
-				</Text>
-				<TouchableOpacity style={styles.primaryButton} onPress={requestPermission}>
-					<Text style={styles.primaryButtonText}>Permitir câmera</Text>
-				</TouchableOpacity>
+			<View style={styles.permissionRoot}>
+				<View style={styles.permissionScreen}>
+					<StatusBar barStyle="light-content" backgroundColor={COLORS.green} />
+					<CircularIconButton
+						style={[styles.permissionBack, { top: insets.top + 12 }]}
+						icon={<Feather name="chevron-left" size={27} color={COLORS.white} />}
+						onPress={() => navigation.goBack()}
+						accessibilityLabel="Voltar"
+					/>
+					<Feather name="camera-off" size={56} color={COLORS.mint} />
+					<Text style={styles.permissionTitle}>Permissão da câmera</Text>
+					<Text style={styles.permissionMessage}>
+						Permita o acesso à câmera para ler QR Codes e códigos de barras.
+					</Text>
+					<TouchableOpacity style={styles.primaryButton} onPress={requestPermission}>
+						<Text style={styles.primaryButtonText}>Permitir câmera</Text>
+					</TouchableOpacity>
+				</View>
+				<View style={[styles.bottomNavigation, { paddingBottom: insets.bottom }]}><NavegacaoAdmin navigation={navigation} activeTab="QR Code" /></View>
 			</View>
 		);
 	}
@@ -145,7 +154,7 @@ export default function AdminQrCode({ navigation }) {
 						onPress={() => navigation.goBack()}
 						accessibilityLabel="Voltar"
 					/>
-					<Feather name="camera-off" size={42} color={COLORS.white} />
+					<Feather name="camera-off" size={50} color={COLORS.white} />
 					<Text style={styles.cameraErrorText}>Não foi possível iniciar a câmera.</Text>
 					<TouchableOpacity style={styles.primaryButton} onPress={scanAgain}>
 						<Text style={styles.primaryButtonText}>Tentar novamente</Text>
@@ -165,12 +174,12 @@ export default function AdminQrCode({ navigation }) {
 
 					<View style={[styles.header, { top: insets.top + 12 }]}>
 						<CircularIconButton
-							icon={<Feather name="chevron-left" size={27} color={COLORS.white} />}
+							icon={<Feather name="chevron-left" size={30} color={COLORS.white} />}
 							onPress={() => navigation.goBack()}
 							accessibilityLabel="Voltar"
 						/>
 						<CircularIconButton
-							icon={<Feather name={flashAtivo ? 'zap' : 'zap-off'} size={20} color={COLORS.white} />}
+							icon={<Feather name={flashAtivo ? 'zap' : 'zap-off'} size={24} color={COLORS.white} />}
 							onPress={alternarFlash}
 							accessibilityState={{ selected: flashAtivo }}
 							accessibilityLabel={flashAtivo ? 'Desligar lanterna' : 'Ligar lanterna'}
@@ -184,7 +193,7 @@ export default function AdminQrCode({ navigation }) {
 					</View>
 
 					{scanResult ? (
-						<View style={[styles.resultPanel, { bottom: insets.bottom + 144 }]}>
+						<View style={[styles.resultPanel, { bottom: insets.bottom + 77 + 144 }]}>
 							<Text style={styles.resultTitle}>Código lido</Text>
 							<Text style={styles.resultType}>{formatBarcodeType(scanResult.type)}</Text>
 							<Text selectable style={styles.resultData}>{scanResult.data}</Text>
@@ -193,7 +202,7 @@ export default function AdminQrCode({ navigation }) {
 							</TouchableOpacity>
 						</View>
 					) : null}
-					<View style={[styles.footer, { bottom: insets.bottom + 16 }]}>
+					<View style={[styles.footer, { bottom: insets.bottom + 61 + 16 }]}>
 						<View style={styles.modeSelector}>
 							<TouchableOpacity
 								style={[styles.modeButton, modoLeitura === 'qrcode' && styles.modeButtonActive]}
@@ -218,7 +227,7 @@ export default function AdminQrCode({ navigation }) {
 						</View>
 						<View style={styles.flipControl}>
 							<CircularIconButton
-								icon={<Feather name="refresh-cw" size={19} color={COLORS.white} />}
+								icon={<Feather name="refresh-cw" size={24} color={COLORS.white} />}
 								onPress={alternarLadoCamera}
 								accessibilityLabel={facing === 'back' ? 'Usar câmera frontal' : 'Usar câmera traseira'}
 							/>
@@ -227,6 +236,7 @@ export default function AdminQrCode({ navigation }) {
 					</View>
 				</>
 			)}
+			<View style={[styles.bottomNavigation, { paddingBottom: insets.bottom }]}><NavegacaoAdmin navigation={navigation} activeTab="QR Code" /></View>
 		</View>
 	);
 }
@@ -254,7 +264,7 @@ const styles = StyleSheet.create({
 	scanFrame: {
 		borderWidth: 3,
 		borderColor: COLORS.green,
-		borderRadius: 18,
+		borderRadius: ADMIN_THEME.layout.cardRadius,
 		backgroundColor: 'transparent',
 		flexShrink: 0,
 	},
@@ -287,26 +297,27 @@ const styles = StyleSheet.create({
 		right: 20,
 		zIndex: 3,
 		padding: 18,
-		borderRadius: 16,
+		borderRadius: ADMIN_THEME.layout.cardRadius,
 		backgroundColor: 'rgba(27, 75, 61, 0.96)',
 	},
 	resultTitle: {
 		color: COLORS.white,
-		fontSize: 18,
-		fontWeight: '700',
+		fontFamily: ADMIN_THEME.fonts.display,
+		fontSize: 24,
 		textAlign: 'center',
 	},
 	resultType: {
 		marginTop: 6,
 		color: '#A8E8D1',
+		fontFamily: ADMIN_THEME.fonts.bold,
 		fontSize: 14,
-		fontWeight: '700',
 		textAlign: 'center',
 	},
 	resultData: {
 		marginTop: 8,
 		marginBottom: 14,
 		color: COLORS.white,
+		fontFamily: ADMIN_THEME.fonts.body,
 		fontSize: 14,
 		textAlign: 'center',
 	},
@@ -320,8 +331,8 @@ const styles = StyleSheet.create({
 	},
 	primaryButtonText: {
 		color: COLORS.white,
-		fontSize: 15,
-		fontWeight: '700',
+		fontFamily: ADMIN_THEME.fonts.bold,
+		fontSize: 14,
 	},
 	permissionScreen: {
 		flex: 1,
@@ -331,20 +342,32 @@ const styles = StyleSheet.create({
 		gap: 16,
 		backgroundColor: COLORS.green,
 	},
+	permissionRoot: {
+		flex: 1,
+		backgroundColor: COLORS.green,
+	},
+	bottomNavigation: {
+		position: 'absolute',
+		left: 0,
+		right: 0,
+		bottom: 0,
+		zIndex: 5,
+	},
 	permissionBack: {
 		position: 'absolute',
 		left: 16,
 	},
 	permissionTitle: {
 		color: COLORS.white,
-		fontSize: 22,
-		fontWeight: '700',
+		fontFamily: ADMIN_THEME.fonts.display,
+		fontSize: 26,
 		textAlign: 'center',
 	},
 	permissionMessage: {
 		color: COLORS.background,
-		fontSize: 15,
-		lineHeight: 22,
+		fontFamily: ADMIN_THEME.fonts.body,
+		fontSize: 14,
+		lineHeight: 21,
 		textAlign: 'center',
 	},
 	cameraErrorPanel: {
@@ -357,7 +380,8 @@ const styles = StyleSheet.create({
 	},
 	cameraErrorText: {
 		color: COLORS.white,
-		fontSize: 16,
+		fontFamily: ADMIN_THEME.fonts.body,
+		fontSize: 15,
 		textAlign: 'center',
 	},
 	footer: {

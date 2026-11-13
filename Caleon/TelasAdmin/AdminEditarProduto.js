@@ -1,17 +1,25 @@
 import React, { useEffect, useState } from 'react';
+import { useFonts } from 'expo-font';
 import { Alert, Image, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import SafeAreaScreen from '../Componentes/SafeAreaScreen';
+import AdminScreenLayout from '../Componentes/AdminScreenLayout';
 import CircularIconButton from '../Componentes/CircularIconButton';
 import Feather from '@expo/vector-icons/Feather';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NavegacaoAdmin from '../Componentes/NavegacaoAdmin';
+import { ADMIN_THEME } from '../Config/AdminTheme';
 
 const KEY = '@camelion/admin-products-v1';
-const C = { green: '#1B4B3D', mint: '#40B190', bg: '#F1F3F5', white: '#FFFFFF', ink: '#183F35', muted: '#7A8581', success: '#00AA6A', red: '#FF383C' };
+const C = ADMIN_THEME.colors;
 const blank = { name: '', description: '', price: '', normal: '', discount: '0', category: 'Frutas', stock: '0', emoji: '🍎', imageUri: null };
 
 export default function AdminEditarProduto({ navigation, route }) {
+  const [fontsLoaded] = useFonts({
+    LilitaOne_400Regular: require('@expo-google-fonts/lilita-one/400Regular/LilitaOne_400Regular.ttf'),
+    Montserrat_400Regular: require('@expo-google-fonts/montserrat/400Regular/Montserrat_400Regular.ttf'),
+    Montserrat_500Medium: require('@expo-google-fonts/montserrat/500Medium/Montserrat_500Medium.ttf'),
+    Montserrat_700Bold: require('@expo-google-fonts/montserrat/700Bold/Montserrat_700Bold.ttf'),
+  });
   const [products, setProducts] = useState([]);
   const [selectedId, setSelectedId] = useState(route?.params?.productId || null);
   const [form, setForm] = useState(blank);
@@ -75,64 +83,71 @@ export default function AdminEditarProduto({ navigation, route }) {
     ]);
   }
 
+  if (!fontsLoaded) return null;
+
   return (
-    <SafeAreaScreen style={styles.safe} edges={['top', 'bottom']}>
+    <>
       <StatusBar barStyle="light-content" backgroundColor={C.green} />
-      <View style={styles.topbar}><View style={styles.brandMark}><Text style={styles.brandLetter}>C</Text></View><View style={{ flex: 1 }}><Text style={styles.kicker}>CAMELION • PAINEL OPERACIONAL</Text><Text style={styles.greeting}>Olá, Administrador</Text></View><CircularIconButton icon={<Feather name="help-circle" size={20} color="#FFFFFF" />} onPress={() => Alert.alert('Ajuda', 'Preencha os campos e toque em Salvar.')} accessibilityLabel="Ajuda" /></View>
+      <AdminScreenLayout
+        headerHeight={72}
+        contentStyle={styles.contentPanel}
+        headerContent={<View style={styles.topbar}><View style={styles.brandMark}><Text style={styles.brandLetter}>C</Text></View><View style={{ flex: 1 }}><Text style={styles.kicker}>CAMELION • PAINEL OPERACIONAL</Text><Text style={styles.greeting}>Olá, Administrador</Text></View><CircularIconButton icon={<Feather name="help-circle" size={30} color="#FFFFFF" />} onPress={() => Alert.alert('Ajuda', 'Preencha os campos e toque em Salvar.')} accessibilityLabel="Ajuda" /></View>}
+        footerContent={<NavegacaoAdmin navigation={navigation} activeTab="Adicionar" />}
+      >
       <View style={styles.screen}>
-        <View style={styles.titleRow}><CircularIconButton icon={<Feather name="chevron-left" size={22} color="#FFFFFF" />} onPress={() => navigation.goBack()} accessibilityLabel="Voltar" /><Text style={styles.title}>Editar Produtos</Text></View>
+        <View style={styles.titleRow}><CircularIconButton icon={<Feather name="chevron-left" size={30} color="#FFFFFF" />} onPress={() => navigation.goBack()} accessibilityLabel="Voltar" /><Text style={styles.title}>Editar Produtos</Text></View>
         {products.length > 0 ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.productPicker}>{products.map((p) => <TouchableOpacity key={p.id} onPress={() => selectProduct(p)} style={[styles.productChip, selectedId === p.id && styles.productChipActive]}><Text style={[styles.productChipText, selectedId === p.id && styles.productChipTextActive]}>{p.name}</Text></TouchableOpacity>)}</ScrollView> : null}
         <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           <Text style={styles.label}>Produto</Text><TextInput style={styles.input} value={form.name} onChangeText={(v) => update('name', v)} placeholder="Ex.: Morango" placeholderTextColor="#929B97" />
           <Text style={styles.label}>Descrição</Text><TextInput style={[styles.input, styles.multiline]} value={form.description} onChangeText={(v) => update('description', v)} placeholder="Descrição do produto" multiline placeholderTextColor="#929B97" />
           <View style={styles.row}><View style={{ flex: 1 }}><Text style={styles.label}>Preço de venda (R$)</Text><TextInput style={styles.input} value={form.price} onChangeText={(v) => update('price', v.replace(',', '.'))} keyboardType="decimal-pad" placeholder="0,00" /></View><View style={{ flex: 1 }}><Text style={styles.label}>Preço normal (R$)</Text><TextInput style={styles.input} value={form.normal} onChangeText={(v) => update('normal', v.replace(',', '.'))} keyboardType="decimal-pad" placeholder="0,00" /></View><View style={{ flex: 0.8 }}><Text style={styles.label}>Desconto %</Text><TextInput style={styles.input} value={form.discount} onChangeText={(v) => update('discount', v)} keyboardType="number-pad" placeholder="0" /></View></View>
           <View style={styles.row}><View style={{ flex: 1 }}><Text style={styles.label}>Categoria</Text><View style={styles.categoryRow}>{['Frutas', 'Verduras', 'Mercearia', 'Bebidas'].map((cat) => <TouchableOpacity key={cat} onPress={() => update('category', cat)} style={[styles.category, form.category === cat && styles.categoryActive]}><Text style={[styles.categoryText, form.category === cat && styles.categoryTextActive]}>{cat}</Text></TouchableOpacity>)}</View></View><View style={{ flex: 0.6 }}><Text style={styles.label}>Estoque</Text><TextInput style={styles.input} value={form.stock} onChangeText={(v) => update('stock', v)} keyboardType="number-pad" placeholder="0" /></View></View>
-          <TouchableOpacity style={styles.imageButton} onPress={chooseImage}><Feather name="camera" size={18} color={C.green} /><Text style={styles.imageButtonText}>{form.imageUri ? 'Trocar imagem' : 'Adicionar foto do produto'}</Text></TouchableOpacity>
+          <TouchableOpacity style={styles.imageButton} onPress={chooseImage}><Feather name="camera" size={28} color={C.green} /><Text style={styles.imageButtonText}>{form.imageUri ? 'Trocar imagem' : 'Adicionar foto do produto'}</Text></TouchableOpacity>
           {form.imageUri ? <Image source={{ uri: form.imageUri }} style={styles.preview} resizeMode="cover" /> : <View style={styles.previewPlaceholder}><Text style={{ fontSize: 40 }}>{form.emoji || '🛒'}</Text><Text style={styles.muted}>Prévia do produto</Text></View>}
           <View style={styles.buttons}><TouchableOpacity style={styles.saveButton} onPress={save}><Text style={styles.buttonText}>Salvar</Text></TouchableOpacity><TouchableOpacity style={styles.cancelButton} onPress={() => { setForm(blank); setSelectedId(null); }}><Text style={styles.buttonText}>Limpar</Text></TouchableOpacity></View>
           <TouchableOpacity style={styles.deleteButton} onPress={remove}><Text style={styles.deleteText}>Excluir produto selecionado</Text></TouchableOpacity>
           {!loaded ? <Text style={styles.muted}>Carregando catálogo...</Text> : null}
         </ScrollView>
       </View>
-      <NavegacaoAdmin navigation={navigation} activeTab="Editar" />
-    </SafeAreaScreen>
+      </AdminScreenLayout>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: C.green },
-  topbar: { minHeight: 70, paddingHorizontal: 15, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  brandMark: { width: 35, height: 35, borderRadius: 18, backgroundColor: C.mint, alignItems: 'center', justifyContent: 'center' },
-  brandLetter: { color: '#FFFFFF', fontSize: 22, fontWeight: '900' },
-  kicker: { color: '#7DE1C4', fontSize: 9, fontWeight: '800' },
-  greeting: { color: '#FFFFFF', fontSize: 13, fontWeight: '800', marginTop: 2 },
-  screen: { flex: 1, backgroundColor: C.bg, borderTopLeftRadius: 26, borderTopRightRadius: 26, paddingHorizontal: 14, paddingTop: 13, overflow: 'hidden' },
-  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
-  title: { color: '#111715', fontSize: 22, fontWeight: '900' },
+  topbar: { minHeight: 72, paddingHorizontal: ADMIN_THEME.layout.contentPadding, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  brandMark: { width: ADMIN_THEME.layout.headerActionSize, height: ADMIN_THEME.layout.headerActionSize, borderRadius: 12, backgroundColor: C.mint, alignItems: 'center', justifyContent: 'center' },
+  brandLetter: { color: C.white, fontFamily: ADMIN_THEME.fonts.display, fontSize: 24 },
+  kicker: { color: '#A8E8D1', fontFamily: ADMIN_THEME.fonts.bold, fontSize: 10 },
+  greeting: { color: C.white, fontFamily: ADMIN_THEME.fonts.bold, fontSize: 17, marginTop: 2 },
+  contentPanel: { paddingHorizontal: 0 },
+  screen: { flex: 1, paddingHorizontal: ADMIN_THEME.layout.headerSidePadding, paddingTop: ADMIN_THEME.layout.contentTopSpacing, overflow: 'hidden' },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 23 },
+  title: { color: '#111715', fontFamily: ADMIN_THEME.fonts.display, fontSize: 28 },
   productPicker: { gap: 7, paddingBottom: 8 },
-  productChip: { paddingHorizontal: 12, paddingVertical: 7, backgroundColor: '#FFFFFF', borderRadius: 17, borderWidth: 1, borderColor: '#DDE5E1' },
+  productChip: { paddingHorizontal: 12, paddingVertical: 8, backgroundColor: C.white, borderRadius: 18, borderWidth: 1, borderColor: '#DDE5E1' },
   productChipActive: { backgroundColor: C.green, borderColor: C.green },
-  productChipText: { color: C.muted, fontSize: 10, fontWeight: '700' },
+  productChipText: { color: C.muted, fontFamily: ADMIN_THEME.fonts.medium, fontSize: 11 },
   productChipTextActive: { color: '#FFFFFF' },
   form: { paddingBottom: 25 },
-  label: { color: '#111715', fontSize: 11, fontWeight: '800', marginTop: 10, marginBottom: 4 },
-  input: { minHeight: 43, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E0E6E2', borderRadius: 8, paddingHorizontal: 10, color: C.ink, fontSize: 12 },
-  multiline: { minHeight: 58, textAlignVertical: 'top', paddingTop: 10 },
-  row: { flexDirection: 'row', gap: 7, alignItems: 'flex-start' },
+  label: { color: '#111715', fontFamily: ADMIN_THEME.fonts.bold, fontSize: 12, marginTop: 12, marginBottom: 5 },
+  input: { minHeight: 48, backgroundColor: C.white, borderWidth: 1, borderColor: '#E0E6E2', borderRadius: 10, paddingHorizontal: 12, color: C.ink, fontFamily: ADMIN_THEME.fonts.body, fontSize: 14 },
+  multiline: { minHeight: 72, textAlignVertical: 'top', paddingTop: 12 },
+  row: { flexDirection: 'row', gap: 8, alignItems: 'flex-start' },
   categoryRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 5 },
-  category: { borderRadius: 15, backgroundColor: '#FFFFFF', paddingHorizontal: 8, paddingVertical: 7, borderWidth: 1, borderColor: '#DDE5E1' },
+  category: { borderRadius: 16, backgroundColor: C.white, paddingHorizontal: 10, paddingVertical: 8, borderWidth: 1, borderColor: '#DDE5E1' },
   categoryActive: { backgroundColor: C.green, borderColor: C.green },
-  categoryText: { color: C.muted, fontSize: 9, fontWeight: '700' },
+  categoryText: { color: C.muted, fontFamily: ADMIN_THEME.fonts.medium, fontSize: 10 },
   categoryTextActive: { color: '#FFFFFF' },
-  imageButton: { flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: '#DDF5EC', borderRadius: 10, padding: 12, marginTop: 15 },
-  imageButtonText: { color: C.green, fontSize: 11, fontWeight: '800' },
-  preview: { width: 90, height: 90, borderRadius: 10, alignSelf: 'center', marginTop: 10 },
-  previewPlaceholder: { minHeight: 90, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF', borderRadius: 10, marginTop: 10, gap: 3 },
-  muted: { color: C.muted, fontSize: 10, textAlign: 'center' },
-  buttons: { flexDirection: 'row', gap: 8, marginTop: 15 },
-  saveButton: { flex: 1, alignItems: 'center', padding: 12, backgroundColor: C.success, borderRadius: 18 },
-  cancelButton: { flex: 1, alignItems: 'center', padding: 12, backgroundColor: C.red, borderRadius: 18 },
-  buttonText: { color: '#FFFFFF', fontSize: 12, fontWeight: '900' },
-  deleteButton: { alignItems: 'center', padding: 12 },
-  deleteText: { color: C.red, fontSize: 11, fontWeight: '800' },
+  imageButton: { minHeight: 48, flexDirection: 'row', gap: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: '#DDF5EC', borderRadius: 12, paddingHorizontal: 14, marginTop: 16 },
+  imageButtonText: { color: C.green, fontFamily: ADMIN_THEME.fonts.bold, fontSize: 13 },
+  preview: { width: 110, height: 110, borderRadius: 12, alignSelf: 'center', marginTop: 12 },
+  previewPlaceholder: { minHeight: 110, alignItems: 'center', justifyContent: 'center', backgroundColor: C.white, borderRadius: 12, marginTop: 12, gap: 4 },
+  muted: { color: C.muted, fontFamily: ADMIN_THEME.fonts.body, fontSize: 12, textAlign: 'center' },
+  buttons: { flexDirection: 'row', gap: 10, marginTop: 16 },
+  saveButton: { flex: 1, minHeight: 48, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, backgroundColor: C.success, borderRadius: 12 },
+  cancelButton: { flex: 1, minHeight: 48, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, backgroundColor: C.red, borderRadius: 12 },
+  buttonText: { color: C.white, fontFamily: ADMIN_THEME.fonts.bold, fontSize: 14 },
+  deleteButton: { minHeight: 44, alignItems: 'center', justifyContent: 'center', padding: 12 },
+  deleteText: { color: C.red, fontFamily: ADMIN_THEME.fonts.bold, fontSize: 12 },
 });
