@@ -18,9 +18,10 @@ import ProdutosCategoriaScreen from './Telas/ProdutosCategoriaScreen';
 import DetalheProduto from './Telas/detalheproduto';
 import AdminHome from './TelasAdmin/AdminHome';
 import ControleEstoque from './TelasAdmin/controleEstoque';
-import AdminPedido from './TelasAdmin/AdminPedido';
+import AdminPedido from './TelasAdmin/AdminPedidoScreen';
 import AdminProdutos from './TelasAdmin/AdminProdutos';
 import AdminQrCode from './TelasAdmin/AdminQrCode';
+import AdminConfiguracoes from './TelasAdmin/AdminConfiguracoes';
 import TelaHomeAdmin from './TelasAdmin/tela home admin';
 import NotificacaoGlobal from './Componentes/NotificacaoGlobal';
 import { getHomeRouteByRole, getUserRole } from './src/utils/getUserRole';
@@ -29,6 +30,7 @@ const Stack = createNativeStackNavigator();
 
 function RoleProtectedScreen({ allowedRoles, Screen, navigation, route }) {
 	const [isAuthorized, setIsAuthorized] = useState(false);
+	const [userRole, setUserRole] = useState(null);
 
 	useEffect(() => {
 		let active = true;
@@ -45,7 +47,10 @@ function RoleProtectedScreen({ allowedRoles, Screen, navigation, route }) {
 					navigation.reset({ index: 0, routes: [{ name: getHomeRouteByRole(role) }] });
 					return;
 				}
-				if (active) setIsAuthorized(true);
+				if (active) {
+					setUserRole(role);
+					setIsAuthorized(true);
+				}
 			} catch (error) {
 				console.error('Não foi possível validar o acesso a esta tela.', error);
 				navigation.reset({ index: 0, routes: [{ name: 'TelaLogin' }] });
@@ -64,7 +69,7 @@ function RoleProtectedScreen({ allowedRoles, Screen, navigation, route }) {
 		);
 	}
 
-	return <Screen navigation={navigation} route={route} />;
+	return <Screen navigation={navigation} route={route} userRole={userRole} />;
 }
 
 function AdminHomeRoute({ navigation, route }) {
@@ -85,6 +90,10 @@ function AdminProductsRoute({ navigation, route }) {
 
 function AdminQrCodeRoute({ navigation, route }) {
 	return <RoleProtectedScreen allowedRoles={['admin', 'employee']} Screen={AdminQrCode} navigation={navigation} route={route} />;
+}
+
+function AdminSettingsRoute({ navigation, route }) {
+	return <RoleProtectedScreen allowedRoles={['admin', 'employee']} Screen={AdminConfiguracoes} navigation={navigation} route={route} />;
 }
 
 function ControleEstoqueRoute({ navigation, route }) {
@@ -148,6 +157,7 @@ export default function App() {
 							<Stack.Screen name="AdminPedido" component={AdminOrderRoute} />
 							<Stack.Screen name="AdminProdutos" component={AdminProductsRoute} />
 							<Stack.Screen name="AdminQrCode" component={AdminQrCodeRoute} />
+							<Stack.Screen name="AdminConfiguracoes" component={AdminSettingsRoute} />
 							<Stack.Screen name="ControleEstoque" component={ControleEstoqueRoute} />
 							<Stack.Screen
 								name="AdminCriarProduto"

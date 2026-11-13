@@ -28,7 +28,7 @@ const adminTabs = [
 	{ label: 'Início', icon: 'home', route: 'AdminHome' },
 	{ label: 'Leitor', icon: 'maximize', route: 'AdminQrCode' },
 	{ label: 'Adicionar', icon: 'plus', route: 'AdminCriarProduto' },
-	{ label: 'Catálogo', icon: 'clipboard-list-outline', activeIcon: 'clipboard-list', route: 'AdminProdutos' },
+	{ label: 'Catálogo', icon: 'clipboard-list-outline', activeIcon: 'clipboard-list', route: 'ControleEstoque' },
 	{ label: 'Configurações', icon: 'cog-outline', activeIcon: 'cog', route: 'AdminConfiguracoes' },
 ];
 

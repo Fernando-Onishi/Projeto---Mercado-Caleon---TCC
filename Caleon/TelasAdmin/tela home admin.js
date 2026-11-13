@@ -23,10 +23,13 @@ import { useFonts } from 'expo-font';
 import Feather from '@expo/vector-icons/Feather';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
-import { collection, doc, serverTimestamp, setDoc } from 'firebase/firestore';
-import { getIdTokenResult, signOut } from 'firebase/auth';
+import { collection, doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { signOut } from 'firebase/auth';
 import { deleteObject, getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { auth, db, storage } from '../Config/FireBaseConfig';
+import { getUserRole } from '../src/utils/getUserRole';
+import { formatProductUnit, getProductPrice } from '../Config/Produtos';
+import { getStockUnitMultiplier } from './adminProdutoUtils';
 
 const COLORS = {
 	green: '#1B4B3D',
@@ -58,6 +61,11 @@ function formatCurrency(cents) {
 	return `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`;
 }
 
+function quantityFromInput(value) {
+	const quantity = Number(String(value).replace(',', '.'));
+	return Number.isFinite(quantity) ? quantity : NaN;
+}
+
 function SelectField({ label, value, placeholder, options, onChange, compact = false }) {
 	const [visible, setVisible] = useState(false);
 	return (
@@ -71,7 +79,7 @@ function SelectField({ label, value, placeholder, options, onChange, compact = f
 					accessibilityLabel={`${label}: ${value || placeholder}`}
 				>
 					<Text numberOfLines={1} style={[styles.selectText, !value && styles.placeholder]}>{value || placeholder}</Text>
-					<Feather name="chevron-down" size={16} color={COLORS.black} />
+					<Feather name="chevron-down" size={13} color={COLORS.black} />
 				</TouchableOpacity>
 			</View>
 			<Modal visible={visible} transparent animationType="fade" onRequestClose={() => setVisible(false)}>
@@ -119,13 +127,21 @@ function NumberField({ label, value, onChange, placeholder = '0', compact = fals
 	);
 }
 
-export default function TelaHomeAdmin({ navigation }) {
+export default function TelaHomeAdmin({ navigation, route }) {
 	const { height: windowHeight } = useWindowDimensions();
 	const [fontsLoaded] = useFonts({
 		LilitaOne_400Regular: require('@expo-google-fonts/lilita-one/400Regular/LilitaOne_400Regular.ttf'),
 	});
 	const [name, setName] = useState('');
 	const [description, setDescription] = useState('');
+	function updateUnit(value) {
+		setUnit(value);
+		if (!existingProduct) return;
+		const multiplier = getStockUnitMultiplier({ unit: value });
+		setInitialStock(String(Number(existingProduct.stockCurrent || 0) / multiplier));
+		setMinimumStock(String(Number(existingProduct.stockMinimum || 0) / multiplier));
+		setCriticalStock(String(Number(existingProduct.stockCritical || 0) / multiplier));
+	}
 	const [salePrice, setSalePrice] = useState('');
 	const [normalPrice, setNormalPrice] = useState('');
 	const [discount, setDiscount] = useState(0);
@@ -135,13 +151,19 @@ export default function TelaHomeAdmin({ navigation }) {
 	const [minimumStock, setMinimumStock] = useState('');
 	const [criticalStock, setCriticalStock] = useState('');
 	const [images, setImages] = useState([]);
+	const [existingProduct, setExistingProduct] = useState(null);
+	const [loadingProduct, setLoadingProduct] = useState(Boolean(route?.params?.productId));
+	const [initialForm, setInitialForm] = useState(null);
 	const [saving, setSaving] = useState(false);
 	const [isSigningOut, setIsSigningOut] = useState(false);
 	const [phase, setPhase] = useState('opening');
 	const translateY = useRef(new Animated.Value(windowHeight)).current;
 	const backdropOpacity = useRef(new Animated.Value(0)).current;
 	const busyRef = useRef(false);
-	const dirty = Boolean(name || description || salePrice || normalPrice || category || unit || initialStock || minimumStock || criticalStock || images.length);
+	const currentForm = { name, description, salePrice, normalPrice, discount, category, unit, initialStock, minimumStock, criticalStock, images };
+	const dirty = initialForm
+		? JSON.stringify(currentForm) !== JSON.stringify(initialForm)
+		: Boolean(name || description || salePrice || normalPrice || category || unit || initialStock || minimumStock || criticalStock || images.length);
 
 	useEffect(() => {
 		Animated.parallel([
@@ -151,6 +173,58 @@ export default function TelaHomeAdmin({ navigation }) {
 			if (finished) setPhase('open');
 		});
 	}, [backdropOpacity, translateY]);
+
+	useEffect(() => {
+		const productId = route?.params?.productId;
+		if (!productId) return undefined;
+		let active = true;
+		getDoc(doc(db, 'products', productId)).then((snapshot) => {
+			if (!active) return;
+			const product = snapshot.exists()
+				? { id: snapshot.id, ...snapshot.data() }
+				: route?.params?.product;
+			if (!product) {
+				Alert.alert('Produto não encontrado', 'O produto pode ter sido removido por outro administrador.');
+				dismiss(true);
+				return;
+			}
+			const multiplier = getStockUnitMultiplier(product);
+			const loadedImages = (Array.isArray(product.imageUrls) ? product.imageUrls : [product.imageUrl])
+				.filter((uri) => typeof uri === 'string' && uri)
+				.slice(0, MAX_IMAGES)
+				.map((uri) => ({ uri, mimeType: 'image/jpeg', remote: true }));
+			const loadedForm = {
+				name: product.name || '',
+				description: product.description || '',
+				salePrice: inputFromCents(product.priceCents || Math.round(getProductPrice(product, product.defaultWeightGrams) * 100)),
+				normalPrice: inputFromCents(product.normalPriceCents || (product.originalPricePerKg ? Math.round(getProductPrice({ pricePerKg: product.originalPricePerKg }, product.defaultWeightGrams) * 100) : 0)),
+				discount: Number(product.discountPercent) || 0,
+				category: product.category === 'HortiFruti' ? 'Horti-Fruti' : product.category || '',
+				unit: product.unit || formatProductUnit(product, product.defaultWeightGrams),
+				initialStock: String(Number(product.stockCurrent || 0) / multiplier),
+				minimumStock: String(Number(product.stockMinimum || 0) / multiplier),
+				criticalStock: String(Number(product.stockCritical || 0) / multiplier),
+				images: loadedImages,
+			};
+			setExistingProduct(product);
+			setName(loadedForm.name);
+			setDescription(loadedForm.description);
+			setSalePrice(loadedForm.salePrice);
+			setNormalPrice(loadedForm.normalPrice);
+			setDiscount(loadedForm.discount);
+			setCategory(loadedForm.category);
+			setUnit(loadedForm.unit);
+			setInitialStock(loadedForm.initialStock);
+			setMinimumStock(loadedForm.minimumStock);
+			setCriticalStock(loadedForm.criticalStock);
+			setImages(loadedImages);
+			setInitialForm(loadedForm);
+		}).catch((error) => {
+			console.error('Não foi possível carregar o produto para edição.', error);
+			if (active) Alert.alert('Erro', 'Não foi possível carregar os dados do produto.');
+		}).finally(() => { if (active) setLoadingProduct(false); });
+		return () => { active = false; };
+	}, [route?.params?.productId]);
 
 	const dismiss = (changesConfirmed = false) => {
 		if (busyRef.current || phase === 'closing') return;
@@ -227,7 +301,12 @@ export default function TelaHomeAdmin({ navigation }) {
 	function updateNormalPrice(value) {
 		const nextCents = centsFromInput(value);
 		setNormalPrice(inputFromCents(nextCents));
-		if (discount > 0) setSalePrice(inputFromCents(Math.round(nextCents * (100 - discount) / 100)));
+		const currentSaleCents = centsFromInput(salePrice);
+		if (discount > 0) {
+			setSalePrice(inputFromCents(Math.round(nextCents * (100 - discount) / 100)));
+		} else if (currentSaleCents > 0 && nextCents > 0) {
+			setDiscount(Math.min(100, Math.max(0, Math.round((1 - currentSaleCents / nextCents) * 100))));
+		}
 	}
 
 	function updateSalePrice(value) {
@@ -236,6 +315,8 @@ export default function TelaHomeAdmin({ navigation }) {
 		const originalCents = centsFromInput(normalPrice);
 		if (originalCents > 0) {
 			setDiscount(Math.min(100, Math.max(0, Math.round((1 - nextCents / originalCents) * 100))));
+		} else {
+			setDiscount(0);
 		}
 	}
 
@@ -251,35 +332,46 @@ export default function TelaHomeAdmin({ navigation }) {
 			Alert.alert('Limite de fotos', `Adicione no máximo ${MAX_IMAGES} fotos por produto.`);
 			return;
 		}
-		const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-		if (!permission.granted) {
-			Alert.alert('Permissão necessária', 'Permita o acesso à galeria para selecionar fotos do produto.');
-			return;
-		}
-		const result = await ImagePicker.launchImageLibraryAsync({
-			mediaTypes: ['images'],
-			allowsMultipleSelection: true,
-			selectionLimit: MAX_IMAGES - images.length,
-			orderedSelection: true,
-			quality: 0.8,
-		});
-		if (!result.canceled) {
-			const seen = new Set(images.map((image) => image.uri));
-			setImages((current) => [...current, ...result.assets.filter((asset) => !seen.has(asset.uri)).map((asset) => ({ uri: asset.uri, mimeType: asset.mimeType || 'image/jpeg' }))].slice(0, MAX_IMAGES));
+		try {
+			const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+			if (!permission.granted) {
+				Alert.alert('Permissão necessária', 'Permita o acesso à galeria para selecionar fotos do produto.');
+				return;
+			}
+			const result = await ImagePicker.launchImageLibraryAsync({
+				mediaTypes: ['images'],
+				allowsMultipleSelection: true,
+				selectionLimit: MAX_IMAGES - images.length,
+				orderedSelection: true,
+				quality: 0.8,
+			});
+			if (!result.canceled) {
+				const seen = new Set(images.map((image) => image.uri));
+				setImages((current) => [...current, ...result.assets.filter((asset) => !seen.has(asset.uri)).map((asset) => ({ uri: asset.uri, mimeType: asset.mimeType || 'image/jpeg' }))].slice(0, MAX_IMAGES));
+			}
+		} catch (error) {
+			console.error('Não foi possível acessar as fotos do produto.', error);
+			Alert.alert('Fotos do produto', 'Não foi possível abrir a galeria. Tente novamente.');
 		}
 	}
 
 	function validate() {
 		const saleCents = centsFromInput(salePrice);
 		const normalCents = centsFromInput(normalPrice);
-		const opening = Number(initialStock || 0);
-		const minimum = Number(minimumStock || 0);
-		const critical = Number(criticalStock || 0);
+		const opening = quantityFromInput(initialStock || '0');
+		const minimum = quantityFromInput(minimumStock || '0');
+		const critical = quantityFromInput(criticalStock || '0');
 		if (!name.trim()) return 'Informe o nome do produto.';
 		if (!category) return 'Selecione uma categoria.';
 		if (!unit) return 'Selecione o peso ou unidade de venda.';
 		if (saleCents <= 0) return 'Informe um preço de venda maior que zero.';
 		if (normalCents > 0 && saleCents > normalCents) return 'O preço de venda não pode ser maior que o preço normal.';
+		if (!Number.isFinite(Number(discount)) || Number(discount) < 0 || Number(discount) > 100) return 'O desconto deve ficar entre 0% e 100%.';
+		if (Number(discount) > 0 && normalCents <= saleCents) return 'Informe um preço normal maior que o preço de venda para aplicar desconto.';
+		if (normalCents > saleCents) {
+			const calculatedDiscount = Math.round((1 - saleCents / normalCents) * 100);
+			if (calculatedDiscount !== Number(discount)) return 'O percentual de desconto não corresponde aos preços informados.';
+		}
 		if ([opening, minimum, critical].some((value) => !Number.isFinite(value) || value < 0)) return 'Os valores de estoque não podem ser negativos.';
 		if (critical > minimum) return 'O estoque crítico deve ser menor ou igual ao estoque mínimo.';
 		return null;
@@ -287,6 +379,10 @@ export default function TelaHomeAdmin({ navigation }) {
 
 	async function saveProduct() {
 		if (busyRef.current) return;
+		if (route?.params?.productId && !existingProduct) {
+			Alert.alert('Produto não carregado', 'Não é possível salvar a edição sem carregar o documento original.');
+			return;
+		}
 		const validationError = validate();
 		if (validationError) {
 			Alert.alert('Revise o cadastro', validationError);
@@ -301,13 +397,16 @@ export default function TelaHomeAdmin({ navigation }) {
 		setSaving(true);
 		const uploadedFiles = [];
 		try {
-			const token = await getIdTokenResult(user, true);
-			if (token.claims.admin !== true) throw new Error('Somente uma conta autorizada com a permissão administrativa pode cadastrar produtos.');
+			if (await getUserRole(user) !== 'admin') throw new Error('Somente uma conta administradora pode cadastrar ou editar produtos.');
 
-			const productRef = doc(collection(db, 'products'));
+			const productRef = existingProduct ? doc(db, 'products', existingProduct.id) : doc(collection(db, 'products'));
 			const imageUrls = [];
 			for (let index = 0; index < images.length; index += 1) {
 				const image = images[index];
+				if (image.remote) {
+					imageUrls.push(image.uri);
+					continue;
+				}
 				const fileRef = ref(storage, `products/${productRef.id}/${Date.now()}-${index}.jpg`);
 				const response = await fetch(image.uri);
 				const blob = await response.blob();
@@ -334,7 +433,7 @@ export default function TelaHomeAdmin({ navigation }) {
 				? unitAmount * 1000
 				: unitType === 'g' ? unitAmount : 1;
 			const catalogCategory = category === 'Horti-Fruti' ? 'HortiFruti' : category;
-			await setDoc(productRef, {
+			const productData = {
 				name: name.trim(),
 				description: description.trim(),
 				category: catalogCategory,
@@ -348,18 +447,25 @@ export default function TelaHomeAdmin({ navigation }) {
 				averageWeightGrams: stockBaseUnit === 'g' ? Math.round(baseQuantity) : null,
 				availableWeights: [Math.round(baseQuantity)],
 				defaultWeightGrams: Math.round(baseQuantity),
-				stockInitial: Math.round(Number(initialStock || 0) * stockMultiplier),
-				stockCurrent: Math.round(Number(initialStock || 0) * stockMultiplier),
-				stockMinimum: Math.round(Number(minimumStock || 0) * stockMultiplier),
-				stockCritical: Math.round(Number(criticalStock || 0) * stockMultiplier),
+				stockInitial: existingProduct
+					? Number(existingProduct.stockInitial || 0)
+					: Math.round(quantityFromInput(initialStock || '0') * stockMultiplier),
+				stockCurrent: Math.round(quantityFromInput(initialStock || '0') * stockMultiplier),
+				stockMinimum: Math.round(quantityFromInput(minimumStock || '0') * stockMultiplier),
+				stockCritical: Math.round(quantityFromInput(criticalStock || '0') * stockMultiplier),
 				imageUrls,
 				imageUrl: imageUrls[0] || null,
-				active: true,
-				createdBy: user.uid,
-				createdAt: serverTimestamp(),
+				active: existingProduct?.active !== false,
+				createdBy: existingProduct?.createdBy || user.uid,
 				updatedAt: serverTimestamp(),
-			});
-			Alert.alert('Produto salvo', 'O Firestore confirmou o cadastro do produto.');
+			};
+			if (!existingProduct) productData.createdAt = serverTimestamp();
+			await setDoc(productRef, productData, { merge: Boolean(existingProduct) });
+			if (existingProduct) {
+				const removedImages = (existingProduct.imageUrls || [existingProduct.imageUrl]).filter((url) => url && !imageUrls.includes(url));
+				await Promise.all(removedImages.map((url) => deleteObject(ref(storage, url)).catch(() => null)));
+			}
+			Alert.alert('Produto salvo', existingProduct ? 'As alterações foram salvas no catálogo.' : 'O produto foi cadastrado no catálogo.');
 			busyRef.current = false;
 			setSaving(false);
 			setName('');
@@ -379,7 +485,7 @@ export default function TelaHomeAdmin({ navigation }) {
 			console.error('Não foi possível salvar o produto.', error);
 			const message = error.code === 'permission-denied'
 				? 'A conta não tem permissão nas regras do Firebase para cadastrar produtos.'
-				: error.message?.includes('permissão administrativa')
+				: error.message?.includes('conta administradora')
 					? error.message
 					: 'Não foi possível salvar o produto. Confira sua conexão e a configuração do Firestore/Storage.';
 			Alert.alert('Falha ao salvar', message);
@@ -400,17 +506,17 @@ export default function TelaHomeAdmin({ navigation }) {
 					<View {...panResponder.panHandlers} style={styles.sheetHeader}>
 						<CircularIconButton
 							style={styles.closeButton}
-							icon={<Feather name="x" size={21} color={COLORS.white} />}
+							icon={<Feather name="x" size={17} color={COLORS.white} />}
 							onPress={dismiss}
 							accessibilityLabel="Fechar formulário"
 						/>
 						<View style={styles.grabHandle} />
-						<Text style={styles.title}>Criar Produto</Text>
+						<Text style={styles.title}>{existingProduct ? 'Editar Produto' : 'Criar Produto'}</Text>
 						<CircularIconButton
 							style={[styles.logoutButton, isSigningOut && styles.disabledButton]}
 							icon={isSigningOut
 								? <ActivityIndicator color={COLORS.white} size="small" />
-								: <Ionicons name="exit-outline" size={24} color={COLORS.white} />}
+								: <Ionicons name="exit-outline" size={17} color={COLORS.white} />}
 							onPress={confirmSignOut}
 							disabled={isSigningOut || saving}
 							accessibilityLabel="Sair da conta"
@@ -421,6 +527,7 @@ export default function TelaHomeAdmin({ navigation }) {
 						showsVerticalScrollIndicator={false}
 						contentContainerStyle={styles.formContent}
 					>
+						{loadingProduct ? <ActivityIndicator color={COLORS.active} /> : null}
 						<View style={styles.fieldGroup}>
 							<Text style={styles.label}>Produto:</Text>
 							<TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Nome do Produto" placeholderTextColor="#9B9B9B" maxLength={80} />
@@ -437,10 +544,10 @@ export default function TelaHomeAdmin({ navigation }) {
 						<Text style={styles.priceHint}>Venda atual: {salePrice ? formatCurrency(centsFromInput(salePrice)) : 'R$ 0,00'}</Text>
 						<View style={styles.row}>
 							<SelectField label="Categoria:" value={category} placeholder="Selecionar" options={CATEGORIES} onChange={setCategory} />
-							<SelectField label="Peso / unidade:" value={unit} placeholder="Selecionar" options={UNITS} onChange={setUnit} />
+							<SelectField label="Peso / unidade:" value={unit} placeholder="Selecionar" options={UNITS} onChange={updateUnit} />
 						</View>
 						<View style={styles.row}>
-							<NumberField label="Estoque Inicial:" value={initialStock} onChange={setInitialStock} compact />
+							<NumberField label={existingProduct ? 'Estoque Atual:' : 'Estoque Inicial:'} value={initialStock} onChange={setInitialStock} compact />
 							<NumberField label="Estoque Mínimo:" value={minimumStock} onChange={setMinimumStock} compact />
 							<NumberField label="Estoque Abaixo:" value={criticalStock} onChange={setCriticalStock} compact />
 						</View>
@@ -458,18 +565,18 @@ export default function TelaHomeAdmin({ navigation }) {
 								))}
 								{images.length < MAX_IMAGES && (
 									<TouchableOpacity style={styles.addPhoto} onPress={pickImages} accessibilityRole="button" accessibilityLabel="Adicionar fotos">
-										<Feather name="plus" size={29} color={COLORS.muted} />
+										<Feather name="plus" size={20} color={COLORS.muted} />
 										<Text style={styles.addPhotoText}>Adicionar Foto</Text>
 									</TouchableOpacity>
 								)}
 							</ScrollView>
 						</View>
 						<View style={styles.actions}>
+							<TouchableOpacity style={[styles.actionButton, styles.saveButton, (saving || loadingProduct) && styles.disabledButton]} onPress={saveProduct} disabled={saving || loadingProduct} accessibilityRole="button">
+								{saving ? <ActivityIndicator color={COLORS.white} size="small" /> : <Text style={styles.actionText}>Salvar</Text>}
+							</TouchableOpacity>
 							<TouchableOpacity style={[styles.actionButton, styles.cancelButton]} onPress={dismiss} disabled={saving} accessibilityRole="button">
 								<Text style={styles.actionText}>Cancelar</Text>
-							</TouchableOpacity>
-							<TouchableOpacity style={[styles.actionButton, styles.saveButton, saving && styles.disabledButton]} onPress={saveProduct} disabled={saving} accessibilityRole="button">
-								{saving ? <ActivityIndicator color={COLORS.white} size="small" /> : <Text style={styles.actionText}>Salvar</Text>}
 							</TouchableOpacity>
 						</View>
 					</ScrollView>
@@ -516,7 +623,7 @@ const styles = StyleSheet.create({
 	photoRow: { gap: 8, paddingVertical: 2 },
 	thumbnailWrap: { width: 89, height: 92, position: 'relative' },
 	thumbnail: { width: '100%', height: '100%', borderRadius: 8, backgroundColor: '#D9D9D9' },
-	removeImage: { position: 'absolute', top: 4, right: 4, width: 21, height: 21, borderRadius: 11, backgroundColor: COLORS.white, alignItems: 'center', justifyContent: 'center' },
+	removeImage: { position: 'absolute', top: 4, right: 4, width: 30, height: 30, borderRadius: 15, backgroundColor: COLORS.white, alignItems: 'center', justifyContent: 'center' },
 	addPhoto: { width: 90, height: 92, borderRadius: 8, backgroundColor: '#D9D9D9', alignItems: 'center', justifyContent: 'center', gap: 2 },
 	addPhotoText: { color: COLORS.muted, fontFamily: 'LilitaOne_400Regular', fontSize: 10 },
 	actions: { flexDirection: 'row', justifyContent: 'space-between', gap: 12, marginTop: 2 },

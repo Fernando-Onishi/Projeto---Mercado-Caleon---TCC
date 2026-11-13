@@ -16,10 +16,11 @@
       ]
     ],
     "android": {
-      "package": "com.caleon.app",
+      "package": "com.caleon",
       "adaptiveIcon": {
         "foregroundImage": "./assets/logoRedimensionada1024x1024.png",
-        "backgroundImage": "./assets/fundoRedimensionado.png"
+        "backgroundImage": "./assets/fundoRedimensionado.png",
+        "backgroundColor": "#194B38"
       }
     },
     "extra": {

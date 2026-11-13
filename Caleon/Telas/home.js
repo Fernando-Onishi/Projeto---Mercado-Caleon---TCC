@@ -146,31 +146,36 @@ function formatCep(value) {
 }
 
 function ProductCard({ product, width, onOpen, onToggleCart, onToggleFavorite, isFavorite, isInCart }) {
-	const scale = width / 160;
+	const scale = width / 130;
 
 	return (
 		<View style={[styles.productCard, {
 			width,
-			height: width * 1.12,
-			padding: width * 0.055,
-			borderRadius: width * 0.085,
+			padding: width * 0.07,
+			borderRadius: width * 0.1,
 		}]}>
-			<TouchableOpacity style={styles.productMain} onPress={onOpen} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel={`Ver detalhes de ${product.name}`}>
+			<TouchableOpacity onPress={onOpen} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel={`Ver detalhes de ${product.name}`}>
 				<View style={[styles.productImage, {
-					height: width * 0.48,
-					borderRadius: width * 0.055,
+					height: width * 0.56,
+					borderRadius: width * 0.06,
 				}]}>
+					<Image source={{ uri: product.imageUrl }} style={styles.productImageContent} resizeMode="contain" />
 					{product.discount ? <Text style={[styles.discount, {
 						left: 2 * scale,
-						top: 3 * scale,
+						top: 2 * scale,
 						fontSize: 9 * scale,
-						paddingHorizontal: 6 * scale,
-						paddingVertical: 3 * scale,
-						borderRadius: 16 * scale,
+						paddingHorizontal: 5 * scale,
+						paddingVertical: 2 * scale,
+						borderRadius: 15 * scale,
 					}]}>{product.discount}</Text> : null}
-					<Image source={{ uri: product.imageUrl }} style={styles.productImageContent} resizeMode="contain" />
 					<TouchableOpacity
-						style={[styles.heartButton, isFavorite && styles.heartButtonActive]}
+						style={[styles.heartButton, isFavorite && styles.heartButtonActive, {
+							right: width * 0.06,
+							top: width * 0.06,
+							width: width * 0.15,
+							height: width * 0.15,
+							borderRadius: width * 0.075,
+						}]}
 						onPress={(event) => { event.stopPropagation(); onToggleFavorite(product.id); }}
 						accessibilityRole="button"
 						accessibilityLabel={`${isFavorite ? 'Remover' : 'Adicionar'} ${product.name} ${isFavorite ? 'dos' : 'aos'} favoritos`}
@@ -182,11 +187,11 @@ function ProductCard({ product, width, onOpen, onToggleCart, onToggleFavorite, i
 						/>
 					</TouchableOpacity>
 				</View>
-				<Text style={[styles.productName, { fontSize: 11 * scale, marginTop: 7 * scale }]} numberOfLines={1}>
+				<Text style={[styles.productName, { fontSize: 12 * scale, marginTop: 6 * scale }]} numberOfLines={1}>
 					{product.name} <Text style={[styles.weight, { fontSize: 8 * scale }]}>{product.weight}</Text>
 				</Text>
-				<View style={styles.priceRow}>
-					<Text style={[styles.price, { fontSize: 16 * scale, marginTop: 2 * scale }]}>{product.price}</Text>
+				<View style={[styles.priceRow, { marginTop: 1 * scale }]}>
+					<Text style={[styles.price, { fontSize: 18 * scale, marginTop: 0 }]}>{product.price}</Text>
 					{product.originalPrice ? (
 						<Text style={[styles.originalPrice, { fontSize: 8 * scale }]}>
 							{product.originalPrice}
@@ -196,17 +201,17 @@ function ProductCard({ product, width, onOpen, onToggleCart, onToggleFavorite, i
 			</TouchableOpacity>
 			<TouchableOpacity
 				style={[styles.addButton, isInCart && styles.addedButton, {
-					height: width * 0.18,
-					borderRadius: width * 0.055,
-					marginTop: width * 0.035,
+					height: width * 0.16,
+					borderRadius: width * 0.06,
+					marginTop: width * 0.02,
 				}]}
 				activeOpacity={0.8}
 				onPress={() => onToggleCart(product, isInCart)}
 				accessibilityRole="button"
 				accessibilityLabel={`${product.name}, ${isInCart ? 'remover da' : 'adicionar à'} sacola`}
 			>
-				<MaterialCommunityIcons name={isInCart ? 'shopping' : 'shopping-outline'} size={12 * scale} color={colors.white} />
-				<Text style={[styles.addButtonText, { fontSize: 8 * scale }]}>
+				<MaterialCommunityIcons name={isInCart ? 'shopping' : 'shopping-outline'} size={11 * scale} color={colors.white} />
+				<Text style={[styles.addButtonText, { fontSize: 8.8 * scale }]}>
 					{isInCart ? 'Adicionado' : 'Adicionar à sacola'}
 				</Text>
 			</TouchableOpacity>
@@ -218,7 +223,7 @@ function ProductSection({ title, products: sectionProducts, cardWidth, navigatio
 	return (
 		<View style={styles.section}>
 			<View style={styles.sectionHeader}>
-				<Text style={styles.sectionTitle}>{title}</Text>
+				<Text style={[styles.sectionTitle, ['Em Destaque', 'Em Promoção', 'Produtos'].includes(title) && styles.productSectionTitle]}>{title}</Text>
 				<TouchableOpacity>
 					<Text style={styles.seeAll}>Ver mais ›</Text>
 				</TouchableOpacity>
@@ -416,7 +421,7 @@ const catalogStyles = StyleSheet.create({
 export default function Home({ navigation, route }) {
 	const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 	const insets = useSafeAreaInsets();
-	const productCardWidth = Math.min(184, Math.max(154, windowWidth * 0.43));
+	const productCardWidth = 160;
 	const [fontsLoaded] = useFonts({
 		Lalezar_400Regular: require('@expo-google-fonts/lalezar/400Regular/Lalezar_400Regular.ttf'),
 		LilitaOne_400Regular: require('@expo-google-fonts/lilita-one/400Regular/LilitaOne_400Regular.ttf'),
@@ -472,6 +477,10 @@ export default function Home({ navigation, route }) {
 		(snapshot) => {
 			const mergedProducts = new Map(initialProducts.map((product) => [product.id, product]));
 			snapshot.docs.forEach((productDocument) => {
+				if (productDocument.data().active === false) {
+					mergedProducts.delete(productDocument.id);
+					return;
+				}
 				const product = mapStoredProduct(productDocument);
 				if (product) mergedProducts.set(product.id, product);
 			});
@@ -738,7 +747,7 @@ export default function Home({ navigation, route }) {
 	}
 
 	return (
-		<SafeAreaScreen style={styles.safeArea} edges={['bottom']}>
+		<SafeAreaScreen style={styles.safeArea} edges={[]}>
 			<StatusBar backgroundColor={colors.green} barStyle="light-content" />
 			<ScrollView
 				style={styles.screenScroll}
@@ -790,6 +799,15 @@ export default function Home({ navigation, route }) {
 								onBannerPress={handleBannerPress}
 							/>
 							<ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesRow}>
+								<TouchableOpacity
+									style={styles.categoryFilter}
+									onPress={() => setIsFilterModalVisible(true)}
+									activeOpacity={0.8}
+									accessibilityRole="button"
+									accessibilityLabel="Abrir filtros de produtos"
+								>
+									<Feather name="sliders" size={17} color={colors.white} />
+								</TouchableOpacity>
 								{filterOptions.map((option) => (
 									<TouchableOpacity
 										key={option.name}
@@ -805,15 +823,6 @@ export default function Home({ navigation, route }) {
 										</Text>
 									</TouchableOpacity>
 								))}
-								<TouchableOpacity
-									style={styles.categoryFilter}
-									onPress={() => setIsFilterModalVisible(true)}
-									activeOpacity={0.8}
-									accessibilityRole="button"
-									accessibilityLabel="Abrir filtros de produtos"
-								>
-									<Feather name="sliders" size={17} color={colors.white} />
-								</TouchableOpacity>
 							</ScrollView>
 						</>
 					)}
@@ -1010,6 +1019,7 @@ export default function Home({ navigation, route }) {
 			</Modal>
 
 			<NavegacaoInferior activeTab="Início" navigation={navigation} />
+			<View style={[styles.safeAreaBottom, { height: insets.bottom }]} />
 		</SafeAreaScreen>
 	);
 }
@@ -1018,6 +1028,9 @@ const styles = StyleSheet.create({
 	safeArea: {
 		flex: 1,
 		backgroundColor: '#194B38',
+	},
+	safeAreaBottom: {
+		backgroundColor: '#F1F3F5',
 	},
 	screenScroll: {
 		flex: 1,
@@ -1034,42 +1047,44 @@ const styles = StyleSheet.create({
 		borderTopLeftRadius: 28,
 	},
 	header: {
-		minHeight: 140,
+		minHeight: 116,
 		backgroundColor: '#194B38',
 		flexDirection: 'row',
 		alignItems: 'center',
-		paddingHorizontal: 16,
-		paddingBottom: 30,
+		paddingHorizontal: 18,
+		paddingBottom: 16,
 	},
 	locationIcon: {
-		width: 50,
-		height: 50,
-		borderRadius: 16,
+		width: 46,
+		height: 46,
+		borderRadius: 14,
 		backgroundColor: '#40B190',
 		alignItems: 'center',
 		justifyContent: 'center',
 	},
 	locationText: {
 		flex: 1,
-		marginLeft: 9,
+		marginLeft: 10,
 	},
 	greeting: {
 		color: colors.white,
 		fontFamily: 'Montserrat_700Bold',
-		fontSize: 19,
-		lineHeight: 24,
+		fontSize: 18,
+		lineHeight: 22,
 	},
 	address: {
 		color: colors.white,
 		fontFamily: 'Montserrat_700Bold',
-		fontSize: 14,
-		lineHeight: 18,
+		fontSize: 12,
+		lineHeight: 16,
+		marginTop: 2,
 	},
 	editCep: {
 		color: '#35D59A',
 		fontFamily: 'Montserrat_500Medium',
-		fontSize: 12,
-		lineHeight: 16,
+		fontSize: 11,
+		lineHeight: 15,
+		marginTop: 2,
 	},
 	modalBackdrop: {
 		flex: 1,
@@ -1150,16 +1165,19 @@ const styles = StyleSheet.create({
 	},
 
 	searchBox: {
-		height: 48,
+		height: 46,
 		marginHorizontal: 18,
-		borderRadius: 15,
-		backgroundColor: '#E5EAE8',
+		borderRadius: 16,
+		backgroundColor: '#E8ECEB',
 		flexDirection: 'row',
 		alignItems: 'center',
 		paddingHorizontal: 14,
+		borderWidth: 1,
+		borderColor: '#DCE3E0',
 	},
 	searchIcon: {
-		marginRight: 7,
+		marginRight: 8,
+		color: '#3D4A46',
 	},
 	searchInput: {
 		flex: 1,
@@ -1236,14 +1254,14 @@ const styles = StyleSheet.create({
 		paddingHorizontal: 18,
 		gap: 8,
 		paddingVertical: 12,
-		marginBottom: 8,
+		marginBottom: 4,
 		alignItems: 'center',
 	},
 	categoryFilter: {
-		width: 50,
-		height: 36,
+		width: 44,
+		height: 34,
 		backgroundColor: colors.green,
-		borderRadius: 20,
+		borderRadius: 18,
 		alignItems: 'center',
 		justifyContent: 'center',
 	},
@@ -1330,11 +1348,11 @@ const styles = StyleSheet.create({
 		fontSize: 13,
 	},
 	category: {
-		backgroundColor: colors.green,
+		backgroundColor: '#1D6A56',
 		paddingHorizontal: 14,
-		height: 38,
+		height: 34,
 		justifyContent: 'center',
-		borderRadius: 12,
+		borderRadius: 18,
 	},
 	selectedCategory: {
 		backgroundColor: '#40B190',
@@ -1342,7 +1360,7 @@ const styles = StyleSheet.create({
 	categoryText: {
 		color: colors.white,
 		fontFamily: 'Montserrat_700Bold',
-		fontSize: 12,
+		fontSize: 11,
 	},
 
 	scrollContent: {
@@ -1366,19 +1384,22 @@ const styles = StyleSheet.create({
 		marginTop: 14,
 	},
 	section: {
-		marginTop: 8,
+		marginTop: 6,
 	},
 	sectionHeader: {
 		flexDirection: 'row',
 		alignItems: 'center',
 		justifyContent: 'space-between',
 		paddingHorizontal: 18,
-		marginBottom: 9,
+		marginBottom: 10,
 	},
 	sectionTitle: {
 		color: colors.ink,
 		fontFamily: 'LilitaOne_400Regular',
 		fontSize: 18,
+	},
+	productSectionTitle: {
+		fontSize: 22,
 	},
 	seeAll: {
 		color: '#656f6c',
@@ -1386,41 +1407,32 @@ const styles = StyleSheet.create({
 		fontSize: 11,
 	},
 	productsRow: {
-		gap: 10,
+		alignItems: 'flex-start',
+		gap: 8,
 		paddingHorizontal: 18,
 		paddingBottom: 12,
 	},
 	productCard: {
-		width: 165,
-		minHeight: 232,
-		padding: 10,
 		backgroundColor: '#FFFFFF',
-		borderRadius: 14,
-		borderWidth: StyleSheet.hairlineWidth,
-		borderColor: '#E1E7E4',
-	},
-	productMain: {
-		flex: 1,
+		elevation: 3,
+		shadowColor: '#000000',
+		shadowOffset: { width: 0, height: 2 },
+		shadowOpacity: 0.1,
+		shadowRadius: 6,
 	},
 	productImage: {
-		height: 96,
-		backgroundColor: '#F7F9F8',
-		borderRadius: 10,
+		backgroundColor: colors.white,
+		borderRadius: 12,
 		alignItems: 'center',
 		justifyContent: 'center',
 		overflow: 'hidden',
 	},
 	productImageContent: {
-		width: '76%',
+		width: '84%',
 		height: '100%',
 	},
 	heartButton: {
 		position: 'absolute',
-		right: 5,
-		top: 5,
-		width: 28,
-		height: 28,
-		borderRadius: 14,
 		backgroundColor: '#1B4B3D',
 		alignItems: 'center',
 		justifyContent: 'center',
@@ -1430,32 +1442,21 @@ const styles = StyleSheet.create({
 	},
 	discount: {
 		position: 'absolute',
-		left: 2,
-		top: 3,
-		backgroundColor: '#FF0000',
+		backgroundColor: '#FF3B30',
 		color: colors.white,
 		fontFamily: 'LilitaOne_400Regular',
-		fontSize: 9,
-		paddingHorizontal: 3,
-		paddingVertical: 3,
-		borderRadius: 3,
 	},
 	productName: {
 		color: colors.green,
 		fontFamily: 'Montserrat_700Bold',
-		fontSize: 10,
-		marginTop: 4,
 	},
 	weight: {
 		color: '#7e8985',
 		fontFamily: 'Montserrat_400Regular',
-		fontSize: 7,
 	},
 	price: {
 		color: colors.green,
 		fontFamily: 'LilitaOne_400Regular',
-		fontSize: 12,
-		marginTop: 1,
 	},
 	priceRow: {
 		flexDirection: 'row',
@@ -1469,16 +1470,11 @@ const styles = StyleSheet.create({
 		marginTop: 1,
 	},
 	addButton: {
-		height: 36,
-		borderRadius: 10,
 		backgroundColor: colors.green,
 		flexDirection: 'row',
-		borderWidth: 1,
-		borderColor: 'transparent',
 		alignItems: 'center',
 		justifyContent: 'center',
-		gap: 3,
-		marginTop: 8,
+		gap: 4,
 	},
 	addedButton: {
 		backgroundColor: colors.lightGreen,
@@ -1487,7 +1483,6 @@ const styles = StyleSheet.create({
 	addButtonText: {
 		color: colors.white,
 		fontFamily: 'Montserrat_500Medium',
-		fontSize: 9,
 	},
 
 });

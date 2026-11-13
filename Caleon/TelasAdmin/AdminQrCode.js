@@ -13,6 +13,7 @@ import { useIsFocused } from '@react-navigation/native';
 import Feather from '@expo/vector-icons/Feather';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import CircularIconButton from '../Componentes/CircularIconButton';
+import NavegacaoAdmin from '../Componentes/NavegacaoAdmin';
 
 const COLORS = {
 	green: '#1B4B3D',
@@ -90,31 +91,37 @@ export default function AdminQrCode({ navigation }) {
 
 	if (!permission) {
 		return (
-			<View style={styles.permissionScreen}>
-				<ActivityIndicator size="large" color={COLORS.mint} />
-				<Text style={styles.permissionMessage}>Verificando permissão da câmera...</Text>
+			<View style={styles.permissionRoot}>
+				<View style={styles.permissionScreen}>
+					<ActivityIndicator size="large" color={COLORS.mint} />
+					<Text style={styles.permissionMessage}>Verificando permissão da câmera...</Text>
+				</View>
+				<View style={[styles.bottomNavigation, { paddingBottom: insets.bottom }]}><NavegacaoAdmin navigation={navigation} activeTab="QR Code" /></View>
 			</View>
 		);
 	}
 
 	if (!permission.granted) {
 		return (
-			<View style={styles.permissionScreen}>
-				<StatusBar barStyle="light-content" backgroundColor={COLORS.green} />
-				<CircularIconButton
-					style={[styles.permissionBack, { top: insets.top + 12 }]}
-					icon={<Feather name="chevron-left" size={27} color={COLORS.white} />}
-					onPress={() => navigation.goBack()}
-					accessibilityLabel="Voltar"
-				/>
-				<Feather name="camera-off" size={48} color={COLORS.mint} />
-				<Text style={styles.permissionTitle}>Permissão da câmera</Text>
-				<Text style={styles.permissionMessage}>
-					Permita o acesso à câmera para ler QR Codes e códigos de barras.
-				</Text>
-				<TouchableOpacity style={styles.primaryButton} onPress={requestPermission}>
-					<Text style={styles.primaryButtonText}>Permitir câmera</Text>
-				</TouchableOpacity>
+			<View style={styles.permissionRoot}>
+				<View style={styles.permissionScreen}>
+					<StatusBar barStyle="light-content" backgroundColor={COLORS.green} />
+					<CircularIconButton
+						style={[styles.permissionBack, { top: insets.top + 12 }]}
+						icon={<Feather name="chevron-left" size={30} color={COLORS.white} />}
+						onPress={() => navigation.goBack()}
+						accessibilityLabel="Voltar"
+					/>
+					<Feather name="camera-off" size={56} color={COLORS.mint} />
+					<Text style={styles.permissionTitle}>Permissão da câmera</Text>
+					<Text style={styles.permissionMessage}>
+						Permita o acesso à câmera para ler QR Codes e códigos de barras.
+					</Text>
+					<TouchableOpacity style={styles.primaryButton} onPress={requestPermission}>
+						<Text style={styles.primaryButtonText}>Permitir câmera</Text>
+					</TouchableOpacity>
+				</View>
+				<View style={[styles.bottomNavigation, { paddingBottom: insets.bottom }]}><NavegacaoAdmin navigation={navigation} activeTab="QR Code" /></View>
 			</View>
 		);
 	}
@@ -141,11 +148,11 @@ export default function AdminQrCode({ navigation }) {
 				<View style={styles.cameraErrorPanel}>
 					<CircularIconButton
 						style={[styles.permissionBack, { top: insets.top + 12 }]}
-						icon={<Feather name="chevron-left" size={27} color={COLORS.white} />}
+						icon={<Feather name="chevron-left" size={30} color={COLORS.white} />}
 						onPress={() => navigation.goBack()}
 						accessibilityLabel="Voltar"
 					/>
-					<Feather name="camera-off" size={42} color={COLORS.white} />
+					<Feather name="camera-off" size={50} color={COLORS.white} />
 					<Text style={styles.cameraErrorText}>Não foi possível iniciar a câmera.</Text>
 					<TouchableOpacity style={styles.primaryButton} onPress={scanAgain}>
 						<Text style={styles.primaryButtonText}>Tentar novamente</Text>
@@ -165,12 +172,12 @@ export default function AdminQrCode({ navigation }) {
 
 					<View style={[styles.header, { top: insets.top + 12 }]}>
 						<CircularIconButton
-							icon={<Feather name="chevron-left" size={27} color={COLORS.white} />}
+							icon={<Feather name="chevron-left" size={30} color={COLORS.white} />}
 							onPress={() => navigation.goBack()}
 							accessibilityLabel="Voltar"
 						/>
 						<CircularIconButton
-							icon={<Feather name={flashAtivo ? 'zap' : 'zap-off'} size={20} color={COLORS.white} />}
+							icon={<Feather name={flashAtivo ? 'zap' : 'zap-off'} size={30} color={COLORS.white} />}
 							onPress={alternarFlash}
 							accessibilityState={{ selected: flashAtivo }}
 							accessibilityLabel={flashAtivo ? 'Desligar lanterna' : 'Ligar lanterna'}
@@ -184,7 +191,7 @@ export default function AdminQrCode({ navigation }) {
 					</View>
 
 					{scanResult ? (
-						<View style={[styles.resultPanel, { bottom: insets.bottom + 144 }]}>
+						<View style={[styles.resultPanel, { bottom: insets.bottom + 77 + 144 }]}>
 							<Text style={styles.resultTitle}>Código lido</Text>
 							<Text style={styles.resultType}>{formatBarcodeType(scanResult.type)}</Text>
 							<Text selectable style={styles.resultData}>{scanResult.data}</Text>
@@ -193,7 +200,7 @@ export default function AdminQrCode({ navigation }) {
 							</TouchableOpacity>
 						</View>
 					) : null}
-					<View style={[styles.footer, { bottom: insets.bottom + 16 }]}>
+					<View style={[styles.footer, { bottom: insets.bottom + 61 + 16 }]}>
 						<View style={styles.modeSelector}>
 							<TouchableOpacity
 								style={[styles.modeButton, modoLeitura === 'qrcode' && styles.modeButtonActive]}
@@ -218,7 +225,7 @@ export default function AdminQrCode({ navigation }) {
 						</View>
 						<View style={styles.flipControl}>
 							<CircularIconButton
-								icon={<Feather name="refresh-cw" size={19} color={COLORS.white} />}
+								icon={<Feather name="refresh-cw" size={30} color={COLORS.white} />}
 								onPress={alternarLadoCamera}
 								accessibilityLabel={facing === 'back' ? 'Usar câmera frontal' : 'Usar câmera traseira'}
 							/>
@@ -227,6 +234,7 @@ export default function AdminQrCode({ navigation }) {
 					</View>
 				</>
 			)}
+			<View style={[styles.bottomNavigation, { paddingBottom: insets.bottom }]}><NavegacaoAdmin navigation={navigation} activeTab="QR Code" /></View>
 		</View>
 	);
 }
@@ -330,6 +338,17 @@ const styles = StyleSheet.create({
 		justifyContent: 'center',
 		gap: 16,
 		backgroundColor: COLORS.green,
+	},
+	permissionRoot: {
+		flex: 1,
+		backgroundColor: COLORS.green,
+	},
+	bottomNavigation: {
+		position: 'absolute',
+		left: 0,
+		right: 0,
+		bottom: 0,
+		zIndex: 5,
 	},
 	permissionBack: {
 		position: 'absolute',

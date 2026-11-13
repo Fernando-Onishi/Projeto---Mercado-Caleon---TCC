@@ -1,119 +1,147 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useFonts } from 'expo-font';
 import {
-  Alert, FlatList, Image, Modal, ScrollView, StatusBar, StyleSheet, Text, TextInput,
-  TouchableOpacity, View,
+  Alert, FlatList, Image, StatusBar, StyleSheet, Text,
+  TouchableOpacity, View, useWindowDimensions,
 } from 'react-native';
 import SafeAreaScreen from '../Componentes/SafeAreaScreen';
 import CircularIconButton from '../Componentes/CircularIconButton';
 import Feather from '@expo/vector-icons/Feather';
-import * as ImagePicker from 'expo-image-picker';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { collection, doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
+import { useNavigationState } from '@react-navigation/native';
+import { db } from '../Config/FireBaseConfig';
+import { formatProductUnit, getProductPrice, PRODUCTS } from '../Config/Produtos';
 import NavegacaoAdmin from '../Componentes/NavegacaoAdmin';
+import { getStockSaleUnits, isExpiringSoon, isLowStock, isOutOfStock, mapAdminProduct } from './adminProdutoUtils';
 
-const STORAGE_KEY = '@camelion/admin-products-v1';
 const C = { green: '#1B4B3D', mint: '#40B190', bg: '#F1F3F5', white: '#FFFFFF', ink: '#183F35', muted: '#7A8581', success: '#00AA6A', red: '#FF383C' };
-const defaults = [
-  { id: '1', name: 'Pitaya', description: 'Pitaya fresca', price: '8.99', normal: '9.99', discount: '10', category: 'Frutas', stock: '18', emoji: '🐉', imageUri: null },
-  { id: '2', name: 'Maçã', description: 'Maçã nacional selecionada', price: '3.99', normal: '3.99', discount: '0', category: 'Frutas', stock: '42', emoji: '🍎', imageUri: null },
-  { id: '3', name: 'Morango', description: 'Morango fresco', price: '8.99', normal: '12.99', discount: '30', category: 'Frutas', stock: '7', emoji: '🍓', imageUri: null },
-  { id: '4', name: 'Banana', description: 'Banana-prata', price: '4.50', normal: '4.50', discount: '0', category: 'Frutas', stock: '25', emoji: '🍌', imageUri: null },
-  { id: '5', name: 'Alface', description: 'Alface crespa', price: '2.99', normal: '2.99', discount: '0', category: 'Verduras', stock: '3', emoji: '🥬', imageUri: null },
-  { id: '6', name: 'Cenoura', description: 'Cenoura selecionada', price: '3.49', normal: '3.99', discount: '12', category: 'Verduras', stock: '12', emoji: '🥕', imageUri: null },
-];
-const emptyForm = { name: '', description: '', price: '', normal: '', discount: '0', category: 'Frutas', stock: '0', emoji: '🛒', imageUri: null };
 const money = (value) => Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const localProducts = PRODUCTS.map((product) => ({
+  ...product,
+  active: true,
+  isSeedProduct: true,
+  imageUrls: product.imageUrl ? [product.imageUrl] : [],
+  stockCurrent: 0,
+  stockMinimum: 0,
+  stockCritical: 0,
+}));
 
-export default function AdminProdutos({ navigation, route }) {
-  const [products, setProducts] = useState(defaults);
-  const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState(route?.params?.lowStock ? 'Estoque baixo' : 'Todos');
-  const [modalVisible, setModalVisible] = useState(false);
-  const [form, setForm] = useState(emptyForm);
-  const [editingId, setEditingId] = useState(null);
-  const [loading, setLoading] = useState(true);
+export default function AdminProdutos({ navigation, route, userRole }) {
+  const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
+  const cardWidth = Math.max(120, (windowWidth - 56) / 2);
+  const [fontsLoaded] = useFonts({
+    LilitaOne_400Regular: require('@expo-google-fonts/lilita-one/400Regular/LilitaOne_400Regular.ttf'),
+    Montserrat_400Regular: require('@expo-google-fonts/montserrat/400Regular/Montserrat_400Regular.ttf'),
+    Montserrat_500Medium: require('@expo-google-fonts/montserrat/500Medium/Montserrat_500Medium.ttf'),
+    Montserrat_700Bold: require('@expo-google-fonts/montserrat/700Bold/Montserrat_700Bold.ttf'),
+  });
+  const activeRouteName = useNavigationState((state) => state.routes[state.index]?.name);
+  const isStockFilterScreen = Boolean(route?.params?.stockFilter || route?.params?.lowStock);
+  const stockFilterLabel = route?.params?.stockFilter || (route?.params?.lowStock ? 'Estoque baixo' : '');
+  const stockFilterColor = stockFilterLabel === 'Estoque zerado' ? C.red : stockFilterLabel === 'Estoque baixo' ? '#FFC928' : '#FFA326';
+  const [products, setProducts] = useState(localProducts);
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
-    let mounted = true;
-    AsyncStorage.getItem(STORAGE_KEY).then((saved) => {
-      if (!mounted) return;
-      if (saved) {
-        try { setProducts(JSON.parse(saved)); } catch { setProducts(defaults); }
-      }
-    }).catch(() => {}).finally(() => { if (mounted) setLoading(false); });
-    return () => { mounted = false; };
+    setLoadError(false);
+    return onSnapshot(collection(db, 'products'), (snapshot) => {
+      const mergedProducts = new Map(localProducts.map((product) => [product.id, product]));
+      snapshot.docs.forEach((productDocument) => {
+        const data = productDocument.data();
+        if (data.active === false) {
+          mergedProducts.delete(productDocument.id);
+          return;
+        }
+        const product = mapAdminProduct(productDocument);
+        if (product) mergedProducts.set(product.id, { ...product, isSeedProduct: false });
+      });
+      setProducts([...mergedProducts.values()]);
+    }, (error) => {
+      console.error('Não foi possível carregar o catálogo administrativo.', error);
+      setLoadError(true);
+    });
   }, []);
 
-  useEffect(() => {
-    if (route?.params?.lowStock) setFilter('Estoque baixo');
-  }, [route?.params?.lowStock]);
-
-  async function persist(next) {
-    setProducts(next);
-    try { await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next)); }
-    catch { Alert.alert('Armazenamento', 'Não foi possível salvar os produtos neste dispositivo.'); }
-  }
-
+  const filter = stockFilterLabel || 'Todos';
   const shownProducts = useMemo(() => products.filter((p) => {
-    const matchesSearch = `${p.name} ${p.description} ${p.category}`.toLocaleLowerCase('pt-BR').includes(search.toLocaleLowerCase('pt-BR'));
-    const matchesFilter = filter === 'Todos' || (filter === 'Estoque baixo' ? Number(p.stock) <= 8 : p.category === filter);
-    return matchesSearch && matchesFilter;
-  }), [products, search, filter]);
-
-  function startAdd() {
-    setEditingId(null); setForm({ ...emptyForm }); setModalVisible(true);
-  }
-  function startEdit(product) {
-    setEditingId(product.id); setForm({ ...product }); setModalVisible(true);
-  }
-  function updateField(key, value) { setForm((current) => ({ ...current, [key]: value })); }
-
-  async function chooseImage() {
-    try {
-      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.85 });
-      if (!result.canceled) updateField('imageUri', result.assets[0].uri);
-    } catch {
-      Alert.alert('Imagem', 'Não foi possível abrir a galeria. Confira se o expo-image-picker está instalado.');
-    }
-  }
-
-  async function saveProduct() {
-    if (!form.name.trim()) { Alert.alert('Produto', 'Informe o nome do produto.'); return; }
-    if (form.price.trim() === '' || !Number.isFinite(Number(form.price)) || Number(form.price) < 0) { Alert.alert('Produto', 'Informe um preço de venda válido.'); return; }
-    if (Number(form.stock) < 0 || form.stock.trim() === '') { Alert.alert('Produto', 'Informe um estoque válido.'); return; }
-    const product = { ...form, name: form.name.trim(), description: form.description.trim(), id: editingId || String(Date.now()) };
-    const next = editingId ? products.map((p) => p.id === editingId ? product : p) : [product, ...products];
-    await persist(next);
-    setModalVisible(false);
-    Alert.alert('Sucesso', editingId ? 'Produto atualizado.' : 'Produto cadastrado.');
-  }
+    const matchesFilter = filter === 'Todos'
+      || (filter === 'Estoque baixo' ? isLowStock(p)
+        : filter === 'Estoque zerado' ? isOutOfStock(p)
+          : filter === 'Vencimento próximo' ? isExpiringSoon(p)
+            : p.category === filter);
+    return matchesFilter;
+  }), [products, filter]);
 
   function deleteProduct(product) {
     Alert.alert('Excluir produto', `Deseja excluir "${product.name}"?`, [
       { text: 'Cancelar', style: 'cancel' },
-      { text: 'Excluir', style: 'destructive', onPress: async () => {
-        await persist(products.filter((p) => p.id !== product.id));
-        if (editingId === product.id) setModalVisible(false);
-      } },
+      {
+        text: 'Excluir',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await setDoc(doc(db, 'products', product.id), { active: false, updatedAt: serverTimestamp() }, { merge: true });
+          } catch (error) {
+            console.error('Não foi possível excluir o produto.', error);
+            Alert.alert('Erro', 'Não foi possível excluir o produto. Confira sua conexão e suas permissões.');
+          }
+        },
+      },
     ]);
   }
 
-  const filters = ['Todos', 'Frutas', 'Verduras', 'Estoque baixo'];
+  if (!fontsLoaded) return null;
 
   return (
-    <SafeAreaScreen style={styles.safe} edges={['top', 'bottom']}>
+    <SafeAreaScreen style={styles.safe} edges={[]}>
       <StatusBar barStyle="light-content" backgroundColor={C.green} />
-      <View style={styles.topbar}>
-        <View style={styles.brandMark}><Text style={styles.brandLetter}>C</Text></View>
-        <View style={{ flex: 1 }}><Text style={styles.kicker}>CAMELION • PAINEL OPERACIONAL</Text><Text style={styles.greeting}>Olá, Administrador</Text></View>
-        <CircularIconButton icon={<Feather name="plus" size={22} color={C.white} />} onPress={startAdd} accessibilityLabel="Adicionar produto" />
-      </View>
-      <View style={styles.screen}>
-        <View style={styles.headerRow}><Text style={styles.title}>Editar Produtos</Text><Text style={styles.count}>{products.length} produtos</Text></View>
-        <View style={styles.searchBox}><Feather name="search" size={18} color={C.muted} /><TextInput style={styles.searchInput} value={search} onChangeText={setSearch} placeholder="Buscar produto..." placeholderTextColor="#9AA39F" /></View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
-          {filters.map((f) => <TouchableOpacity key={f} onPress={() => setFilter(f)} style={[styles.filter, filter === f && styles.filterActive]}><Text style={[styles.filterText, filter === f && styles.filterTextActive]}>{f}</Text></TouchableOpacity>)}
-        </ScrollView>
-        {loading ? <Text style={styles.empty}>Carregando produtos...</Text> : (
+      {isStockFilterScreen ? (
+        <View style={[styles.stockTopbar, { paddingTop: insets.top }]}>
+          <CircularIconButton
+            size={24}
+            icon={<Feather name="chevron-left" size={17} color={C.white} />}
+            onPress={() => navigation.canGoBack() ? navigation.goBack() : navigation.navigate('ControleEstoque')}
+            accessibilityLabel="Voltar ao controle de estoque"
+          />
+          <View style={styles.stockHeaderSpacer} />
+          <CircularIconButton
+            size={24}
+            borderRadius={7}
+            icon={<Feather name="bell" size={15} color={C.white} />}
+            onPress={() => navigation.navigate('AdminProdutos', { stockFilter: 'Estoque baixo' })}
+            accessibilityLabel="Ver alertas de estoque baixo"
+          />
+        </View>
+      ) : (
+        <View style={[styles.catalogTopbar, { paddingTop: insets.top > 0 ? insets.top + 8 : 16 }]}>
+          <CircularIconButton
+            size={40}
+            borderRadius={12}
+            icon={<Feather name="chevron-left" size={27} color={C.white} />}
+            onPress={() => navigation.canGoBack() ? navigation.goBack() : navigation.navigate('AdminHome')}
+            accessibilityLabel="Voltar"
+          />
+          <View style={styles.catalogHeaderSpacer} />
+          <CircularIconButton
+            size={40}
+            borderRadius={12}
+            icon={<Feather name="package" size={22} color={C.white} />}
+            onPress={() => navigation.navigate('ControleEstoque')}
+            accessibilityLabel="Controle de estoque"
+          />
+        </View>
+      )}
+      <View style={[styles.screen, !isStockFilterScreen && styles.catalogScreen]}>
+        {isStockFilterScreen ? (
+          <View style={styles.stockHeading}>
+            <Text style={styles.stockTitle}>Controle de Estoque</Text>
+            <Text style={[styles.stockFilterLabel, { color: stockFilterColor }]}>{stockFilterLabel}</Text>
+          </View>
+        ) : (
+          <View style={styles.headerRow}><Text style={[styles.title, styles.catalogTitle]}>Editar Produtos</Text></View>
+        )}
           <FlatList
             data={shownProducts}
             numColumns={2}
@@ -121,64 +149,67 @@ export default function AdminProdutos({ navigation, route }) {
             columnWrapperStyle={styles.gridRow}
             contentContainerStyle={styles.grid}
             showsVerticalScrollIndicator={false}
-            ListEmptyComponent={<Text style={styles.empty}>Nenhum produto encontrado.</Text>}
-            renderItem={({ item }) => (
-              <View style={styles.productCard}>
-                <TouchableOpacity style={styles.productMain} onPress={() => startEdit(item)} activeOpacity={0.8}>
-                  <View style={styles.productArt}>
-                    {item.imageUri ? <Image source={{ uri: item.imageUri }} style={styles.productImage} resizeMode="cover" /> : <Text style={styles.emoji}>{item.emoji || '🛒'}</Text>}
-                    {Number(item.discount) > 0 ? <Text style={styles.discount}>{item.discount}% OFF</Text> : null}
-                    {Number(item.stock) <= 8 ? <Text style={styles.stockWarning}>Baixo</Text> : null}
-                  </View>
-                  <Text style={styles.productName} numberOfLines={1}>{item.name}</Text>
-                  <Text style={styles.stockText}>{item.stock} un. em estoque</Text>
-                  <Text style={styles.price}>{money(item.price)}</Text>
-                  {Number(item.discount) > 0 ? <Text style={styles.oldPrice}>{money(item.normal)}</Text> : null}
-                </TouchableOpacity>
-                <View style={styles.productActions}>
-                  <TouchableOpacity style={styles.editButton} onPress={() => startEdit(item)}><Feather name="edit-2" size={12} color="#FFFFFF" /><Text style={styles.actionText}>Editar</Text></TouchableOpacity>
-                  <TouchableOpacity style={styles.deleteButton} onPress={() => deleteProduct(item)}><Feather name="trash-2" size={12} color="#FFFFFF" /><Text style={styles.actionText}>Excluir</Text></TouchableOpacity>
+            ListEmptyComponent={<Text style={styles.empty}>{loadError ? 'Não foi possível carregar o catálogo.' : 'Nenhum produto encontrado.'}</Text>}
+            renderItem={({ item }) => {
+              const stockUnits = getStockSaleUnits(item);
+              const stockLabel = Number.isInteger(stockUnits) ? String(stockUnits) : stockUnits.toFixed(1).replace('.', ',');
+              const discount = item.originalPricePerKg
+                ? Math.round((1 - item.pricePerKg / item.originalPricePerKg) * 100)
+                : 0;
+              const unitLabel = formatProductUnit(item, item.defaultWeightGrams);
+              const salePrice = Number(item.priceCents) > 0
+                ? Number(item.priceCents) / 100
+                : getProductPrice(item, item.defaultWeightGrams);
+              const originalPrice = Number(item.normalPriceCents) > 0
+                ? Number(item.normalPriceCents) / 100
+                : item.originalPricePerKg ? getProductPrice({ ...item, pricePerKg: item.originalPricePerKg }, item.defaultWeightGrams) : null;
+              return (
+                <View style={[styles.productCard, { width: cardWidth }, isStockFilterScreen && styles.stockFilteredProductCard]}>
+                  <TouchableOpacity style={styles.productMain} onPress={() => userRole === 'admin' && navigation.navigate('AdminCriarProduto', { productId: item.id, product: item.isSeedProduct ? item : undefined })} activeOpacity={0.8} disabled={userRole !== 'admin'}>
+                    <View style={[styles.productArt, { height: cardWidth * 0.56 }, isStockFilterScreen && styles.stockFilteredProductArt]}>
+                      {item.imageUrl ? <Image source={{ uri: item.imageUrl }} style={styles.productImage} resizeMode={isStockFilterScreen ? 'cover' : 'contain'} /> : <Feather name="package" size={42} color={C.mint} />}
+                      {discount > 0 ? <Text style={styles.discount}>{discount}% OFF</Text> : null}
+                      {isStockFilterScreen && (isLowStock(item) || isOutOfStock(item)) ? <Text style={styles.stockWarning}>{isOutOfStock(item) ? 'Zerado' : 'Baixo'}</Text> : null}
+                    </View>
+                    <Text style={[styles.productName, isStockFilterScreen && styles.stockFilteredProductName]} numberOfLines={1}>
+                      {item.name} <Text style={styles.productUnit}>{unitLabel}</Text>
+                    </Text>
+                    {isStockFilterScreen ? <Text style={styles.stockText}>{stockLabel} {item.unit || 'unid.'} em estoque</Text> : null}
+                    <View style={styles.priceRow}>
+                      <Text style={[styles.price, isStockFilterScreen && styles.stockFilteredPrice]}>{money(salePrice)}</Text>
+                      {originalPrice ? <Text style={[styles.oldPrice, !isStockFilterScreen && styles.catalogOldPrice]}>{money(originalPrice)}</Text> : null}
+                    </View>
+                  </TouchableOpacity>
+                  {userRole === 'admin' ? <View style={styles.productActions}>
+                    <TouchableOpacity style={[styles.editButton, !isStockFilterScreen && styles.catalogActionButton]} onPress={() => navigation.navigate('AdminCriarProduto', { productId: item.id, product: item.isSeedProduct ? item : undefined })} accessibilityRole="button" accessibilityLabel={`Editar ${item.name}`}><Feather name="edit-2" size={12} color="#FFFFFF" /><Text style={styles.actionText}>Editar</Text></TouchableOpacity>
+                    <TouchableOpacity style={[styles.deleteButton, !isStockFilterScreen && styles.catalogActionButton]} onPress={() => deleteProduct(item)} accessibilityRole="button" accessibilityLabel={`Deletar ${item.name}`}><Feather name="trash-2" size={12} color="#FFFFFF" /><Text style={styles.actionText}>Deletar</Text></TouchableOpacity>
+                  </View> : null}
                 </View>
-              </View>
-            )}
+              );
+            }}
           />
-        )}
       </View>
-      <NavegacaoAdmin navigation={navigation} activeTab="Catálogo" />
-      <Modal visible={modalVisible} animationType="slide" transparent onRequestClose={() => setModalVisible(false)}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.sheet}>
-            <View style={styles.handle} />
-            <View style={styles.sheetTitleRow}><CircularIconButton icon={<Feather name="x" size={21} color="#FFFFFF" />} onPress={() => setModalVisible(false)} accessibilityLabel="Fechar formulário" /><Text style={styles.sheetTitle}>{editingId ? 'Editar Produto' : 'Adicionar Produto'}</Text><View style={{ width: 40 }} /></View>
-            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-              <Text style={styles.label}>Produto</Text><TextInput style={styles.input} value={form.name} onChangeText={(v) => updateField('name', v)} placeholder="Ex.: Morango" placeholderTextColor="#929B97" />
-              <Text style={styles.label}>Descrição</Text><TextInput style={[styles.input, styles.multiline]} value={form.description} onChangeText={(v) => updateField('description', v)} placeholder="Descrição do produto" multiline placeholderTextColor="#929B97" />
-              <View style={styles.formRow}><View style={{ flex: 1 }}><Text style={styles.label}>Preço de venda (R$)</Text><TextInput style={styles.input} value={form.price} onChangeText={(v) => updateField('price', v.replace(',', '.'))} keyboardType="decimal-pad" placeholder="0,00" /></View><View style={{ flex: 1 }}><Text style={styles.label}>Preço normal (R$)</Text><TextInput style={styles.input} value={form.normal} onChangeText={(v) => updateField('normal', v.replace(',', '.'))} keyboardType="decimal-pad" placeholder="0,00" /></View></View>
-              <View style={styles.formRow}><View style={{ flex: 1 }}><Text style={styles.label}>Desconto (%)</Text><TextInput style={styles.input} value={form.discount} onChangeText={(v) => updateField('discount', v)} keyboardType="number-pad" placeholder="0" /></View><View style={{ flex: 1 }}><Text style={styles.label}>Estoque (un.)</Text><TextInput style={styles.input} value={form.stock} onChangeText={(v) => updateField('stock', v)} keyboardType="number-pad" placeholder="0" /></View></View>
-              <Text style={styles.label}>Categoria</Text>
-              <View style={styles.categoryRow}>{['Frutas', 'Verduras', 'Mercearia', 'Bebidas'].map((cat) => <TouchableOpacity key={cat} onPress={() => updateField('category', cat)} style={[styles.categoryChip, form.category === cat && styles.categorySelected]}><Text style={[styles.categoryText, form.category === cat && styles.categoryTextSelected]}>{cat}</Text></TouchableOpacity>)}</View>
-              <TouchableOpacity style={styles.imageButton} onPress={chooseImage}><Feather name="camera" size={17} color={C.green} /><Text style={styles.imageButtonText}>{form.imageUri ? 'Trocar imagem' : 'Selecionar imagem do produto'}</Text></TouchableOpacity>
-              {form.imageUri ? <Image source={{ uri: form.imageUri }} style={styles.preview} resizeMode="cover" /> : null}
-              <View style={styles.sheetActions}><TouchableOpacity style={styles.cancelButton} onPress={() => setModalVisible(false)}><Text style={styles.buttonText}>Cancelar</Text></TouchableOpacity><TouchableOpacity style={styles.saveButton} onPress={saveProduct}><Text style={styles.buttonText}>Salvar</Text></TouchableOpacity></View>
-              {editingId ? <TouchableOpacity style={styles.deleteFull} onPress={() => { const p = products.find((x) => x.id === editingId); if (p) deleteProduct(p); }}><Text style={styles.deleteFullText}>Excluir produto</Text></TouchableOpacity> : null}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
+      <NavegacaoAdmin navigation={navigation} activeTab={activeRouteName === 'AdminCriarProduto' ? 'Adicionar' : 'Catálogo'} showAdd={userRole === 'admin'} />
+      <View style={[styles.safeAreaBottom, { height: insets.bottom }]} />
     </SafeAreaScreen>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.green },
-  topbar: { minHeight: 70, paddingHorizontal: 15, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  brandMark: { width: 35, height: 35, borderRadius: 18, backgroundColor: C.mint, alignItems: 'center', justifyContent: 'center' },
-  brandLetter: { color: '#FFFFFF', fontSize: 22, fontWeight: '900' },
-  kicker: { color: '#7DE1C4', fontSize: 9, fontWeight: '800' },
-  greeting: { color: '#FFFFFF', fontSize: 13, fontWeight: '800', marginTop: 2 },
-  screen: { flex: 1, backgroundColor: C.bg, borderTopLeftRadius: 26, borderTopRightRadius: 26, paddingHorizontal: 13, paddingTop: 15, overflow: 'hidden' },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  title: { color: '#111715', fontSize: 23, fontWeight: '900' },
+  safeAreaBottom: { backgroundColor: '#F1F3F5' },
+  stockTopbar: { minHeight: 50, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', backgroundColor: C.green },
+  stockHeaderSpacer: { flex: 1 },
+  catalogTopbar: { minHeight: 40, paddingHorizontal: 16, paddingBottom: 8, flexDirection: 'row', alignItems: 'center', backgroundColor: C.green },
+  catalogHeaderSpacer: { flex: 1 },
+  screen: { flex: 1, backgroundColor: C.bg, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 18, paddingTop: 18, overflow: 'hidden' },
+  catalogScreen: { paddingHorizontal: 12, paddingTop: 18 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  stockHeading: { alignItems: 'center', marginBottom: 5 },
+  stockTitle: { color: '#111715', fontFamily: 'LilitaOne_400Regular', fontSize: 20, lineHeight: 25 },
+  stockFilterLabel: { fontFamily: 'Montserrat_700Bold', fontSize: 11, lineHeight: 16 },
+  title: { color: '#111715', fontFamily: 'LilitaOne_400Regular', fontSize: 22 },
+  catalogTitle: { flex: 1, textAlign: 'center', fontSize: 30, marginBottom: 0 },
   count: { color: C.muted, fontSize: 10, fontWeight: '700' },
   searchBox: { height: 42, backgroundColor: '#FFFFFF', borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, marginBottom: 10 },
   searchInput: { flex: 1, minWidth: 0, color: C.ink, fontSize: 12, paddingVertical: 8 },
@@ -187,24 +218,31 @@ const styles = StyleSheet.create({
   filterActive: { backgroundColor: C.green, borderColor: C.green },
   filterText: { color: C.muted, fontSize: 10, fontWeight: '700' },
   filterTextActive: { color: '#FFFFFF' },
-  grid: { paddingBottom: 20, gap: 10 },
-  gridRow: { justifyContent: 'space-between', gap: 10 },
-  productCard: { width: '48.5%', backgroundColor: '#FFFFFF', borderRadius: 16, padding: 8, marginBottom: 2, elevation: 2 },
+  grid: { paddingBottom: 16, gap: 9 },
+  gridRow: { justifyContent: 'space-between', gap: 9 },
+  productCard: { width: '48.5%', backgroundColor: '#FFFFFF', borderRadius: 18, padding: 10, marginBottom: 1, borderWidth: 1, borderColor: '#E7ECE9', elevation: 2, shadowColor: '#1B4B3D', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.1, shadowRadius: 6 },
+  stockFilteredProductCard: { borderWidth: 1, borderColor: '#E4E8E6', borderRadius: 9, padding: 5 },
   productMain: { flex: 1 },
-  productArt: { height: 105, borderRadius: 12, backgroundColor: '#F6F7F6', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative' },
+  productArt: { borderRadius: 12, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative' },
+  stockFilteredProductArt: { height: 72, borderRadius: 7 },
   emoji: { fontSize: 57 },
   productImage: { width: '100%', height: '100%' },
-  discount: { position: 'absolute', top: 6, left: 6, backgroundColor: '#FF0000', color: '#FFFFFF', fontSize: 11, fontWeight: '900', paddingHorizontal: 7, paddingVertical: 5, borderRadius: 7, zIndex: 1 },
+  discount: { position: 'absolute', top: 4, left: 4, backgroundColor: '#FF3B30', color: '#FFFFFF', fontFamily: 'LilitaOne_400Regular', fontSize: 8, paddingHorizontal: 5, paddingVertical: 3, borderRadius: 5, zIndex: 1 },
   stockWarning: { position: 'absolute', top: 6, right: 6, backgroundColor: '#FFF0D8', color: '#A96E00', fontSize: 8, fontWeight: '900', paddingHorizontal: 5, paddingVertical: 3, borderRadius: 5, zIndex: 1 },
-  productName: { color: '#226842', fontSize: 16, fontWeight: '900', marginTop: 6 },
-  stockText: { color: C.muted, fontSize: 9, marginTop: 1 },
-  price: { color: C.success, fontSize: 14, fontWeight: '900', marginTop: 2 },
-  oldPrice: { color: '#A3AAA7', fontSize: 9, textDecorationLine: 'line-through' },
-  productActions: { flexDirection: 'row', gap: 5, marginTop: 8 },
-  editButton: { flex: 1, flexDirection: 'row', gap: 4, alignItems: 'center', justifyContent: 'center', backgroundColor: C.green, paddingVertical: 7, borderRadius: 17 },
-  deleteButton: { flex: 1, flexDirection: 'row', gap: 4, alignItems: 'center', justifyContent: 'center', backgroundColor: C.red, paddingVertical: 7, borderRadius: 17 },
-  actionText: { color: '#FFFFFF', fontSize: 9, fontWeight: '800' },
-  empty: { textAlign: 'center', padding: 25, color: C.muted, fontSize: 12 },
+  productName: { color: C.green, fontFamily: 'Montserrat_700Bold', fontSize: 15, marginTop: 5 },
+  stockFilteredProductName: { fontSize: 11, marginTop: 3 },
+  productUnit: { color: '#7E8985', fontFamily: 'Montserrat_400Regular', fontSize: 10 },
+  stockText: { color: C.muted, fontFamily: 'Montserrat_400Regular', fontSize: 9, marginTop: 1 },
+  price: { color: C.green, fontFamily: 'LilitaOne_400Regular', fontSize: 16, marginTop: 2 },
+  stockFilteredPrice: { fontSize: 9, marginTop: 1 },
+  oldPrice: { color: '#9AA39F', fontFamily: 'Montserrat_400Regular', fontSize: 9, textDecorationLine: 'line-through' },
+  catalogOldPrice: { fontSize: 8 },
+  priceRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  productActions: { flexDirection: 'row', gap: 5, marginTop: 7 },
+  editButton: { flex: 1, flexDirection: 'row', gap: 4, alignItems: 'center', justifyContent: 'center', backgroundColor: C.green, paddingVertical: 7, borderRadius: 14 },
+  deleteButton: { flex: 1, flexDirection: 'row', gap: 4, alignItems: 'center', justifyContent: 'center', backgroundColor: C.red, paddingVertical: 7, borderRadius: 14 },
+  actionText: { color: '#FFFFFF', fontFamily: 'Montserrat_500Medium', fontSize: 10 },
+  empty: { textAlign: 'center', padding: 25, color: C.muted, fontFamily: 'Montserrat_400Regular', fontSize: 12 },
   modalBackdrop: { flex: 1, backgroundColor: '#0006', justifyContent: 'flex-end', alignItems: 'center' },
   sheet: { width: '100%', maxWidth: 520, maxHeight: '92%', backgroundColor: C.bg, borderTopLeftRadius: 23, borderTopRightRadius: 23, paddingHorizontal: 15, paddingTop: 9, paddingBottom: 18 },
   handle: { width: 52, height: 4, borderRadius: 3, backgroundColor: '#909895', alignSelf: 'center', marginBottom: 12 },
