@@ -2,6 +2,8 @@ import React from 'react';
 import Feather from '@expo/vector-icons/Feather';
 import Octicons from '@expo/vector-icons/Octicons';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { ADMIN_THEME } from '../Config/AdminTheme';
+import { useProductModal } from './ProductModalContext';
 import { useFonts } from 'expo-font';
 import {
 	Alert,
@@ -14,17 +16,24 @@ import {
 const tabs = [
 	{ label: 'Início', icon: 'home', activeIcon: 'home-fill', route: 'AdminHome' },
 	{ label: 'QR Code', icon: 'maximize', route: 'AdminQrCode' },
-	{ label: 'Adicionar', icon: 'plus', route: 'AdminCriarProduto' },
+	{ label: 'Adicionar', icon: 'plus', route: 'AdminAdicionarProduto', action: 'addProduct' },
 	{ label: 'Catálogo', icon: 'clipboard-list-outline', activeIcon: 'clipboard-list', route: 'AdminProdutos' },
 	{ label: 'Configurações', icon: 'settings', route: 'AdminConfiguracoes' },
 ];
 
 export default function NavegacaoAdmin({ navigation, activeTab, showAdd = true }) {
+	const { closeProductModal } = useProductModal();
 	useFonts({
 		LilitaOne_400Regular: require('@expo-google-fonts/lilita-one/400Regular/LilitaOne_400Regular.ttf'),
 	});
 
-	function navigateTo(route, label) {
+	function navigateTo(route, label, action) {
+		if (action === 'addProduct') {
+			closeProductModal();
+			if (navigation.getState()?.routes?.[navigation.getState().index]?.name !== route) navigation.navigate(route);
+			return;
+		}
+
 		const state = navigation.getState();
 		const routeNames = state?.routeNames || [];
 		if (!routeNames.includes(route)) {
@@ -32,6 +41,7 @@ export default function NavegacaoAdmin({ navigation, activeTab, showAdd = true }
 			return;
 		}
 
+		closeProductModal();
 		if (state?.routes?.[state.index]?.name === route && route !== 'AdminProdutos') return;
 		navigation.navigate(route, route === 'AdminProdutos' ? { stockFilter: null, lowStock: false } : undefined);
 	}
@@ -46,7 +56,7 @@ export default function NavegacaoAdmin({ navigation, activeTab, showAdd = true }
 					<TouchableOpacity
 						key={tab.label}
 						style={styles.tab}
-						onPress={() => navigateTo(tab.route, tab.label)}
+						onPress={() => navigateTo(tab.route, tab.label, tab.action)}
 						accessibilityRole="button"
 						accessibilityState={{ selected }}
 						accessibilityLabel={tab.label}
@@ -77,15 +87,15 @@ export default function NavegacaoAdmin({ navigation, activeTab, showAdd = true }
 
 const styles = StyleSheet.create({
 	bar: {
-		height: 92,
+		height: ADMIN_THEME.layout.bottomBarHeight,
 		paddingHorizontal: 3,
 		paddingBottom: 6,
 		flexDirection: 'row',
 		alignItems: 'center',
 		justifyContent: 'space-around',
-		backgroundColor: '#f2f3f4',
+		backgroundColor: '#FFFFFF',
 		borderTopWidth: 1,
-		borderTopColor: '#dfe3e6',
+		borderTopColor: '#D1D5DB',
 	},
 	tab: {
 		flex: 1,
@@ -95,8 +105,8 @@ const styles = StyleSheet.create({
 		paddingTop: 4,
 	},
 	iconBox: {
-		width: 46,
-		height: 46,
+		width: 40,
+		height: 40,
 		alignItems: 'center',
 		justifyContent: 'center',
 		position: 'relative',
@@ -108,7 +118,7 @@ const styles = StyleSheet.create({
 		borderRadius: 12,
 	},
 	menuIconSelected: {
-		backgroundColor: '#076653',
+		backgroundColor: '#1B4B3D',
 	},
 	addTabIcon: {
 		width: 46,
@@ -123,6 +133,7 @@ const styles = StyleSheet.create({
 		marginTop: 4,
 	},
 	selectedLabel: {
-		color: '#076653',
+		color: '#1B4B3D',
+		fontFamily: ADMIN_THEME.fonts.bold,
 	},
 });

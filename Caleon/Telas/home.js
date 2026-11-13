@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useFonts } from 'expo-font';
 import { onAuthStateChanged } from 'firebase/auth';
+import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
+	ActivityIndicator,
 	Alert,
 	Animated,
 	FlatList,
@@ -24,8 +26,9 @@ import {
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import Feather from '@expo/vector-icons/Feather';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { collection, onSnapshot, orderBy, query, where } from 'firebase/firestore';
-import { auth, db } from '../Config/FireBaseConfig';
+import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
+import { deleteObject, getDownloadURL, ref, uploadBytes } from 'firebase/storage';
+import { auth, db, storage } from '../Config/FireBaseConfig';
 import BotaoSacola from '../Componentes/BotaoSacola';
 import { getProfileStorageKey } from '../Config/PerfilStorage';
 import { formatCurrency, formatProductUnit, getProductPrice, PRODUCTS } from '../Config/Produtos';
@@ -41,6 +44,7 @@ import CircularIconButton from '../Componentes/CircularIconButton';
 import { publishSacolaCount } from '../Componentes/useSacolaCount';
 import { showGlobalNotification } from '../Componentes/NotificacaoGlobal';
 import SafeAreaScreen from '../Componentes/SafeAreaScreen';
+import { getUserRole } from '../src/utils/getUserRole';
 
 const colors = {
 	green: '#1B4B3D',
@@ -246,6 +250,18 @@ function ProductSection({ title, products: sectionProducts, cardWidth, navigatio
 	);
 }
 
+function EmptyProductsState() {
+	return (
+		<View style={styles.emptyProducts}>
+			<Feather name="search" size={40} color="#9CA3AF" />
+			<Text style={styles.emptyProductsTitle}>Nenhum produto encontrado</Text>
+			<Text style={styles.emptyProductsDescription}>
+				Não há produtos disponíveis nesta categoria ou busca no momento.
+			</Text>
+		</View>
+	);
+}
+
 function BannerSlide({ banner, width, onPress }) {
 	const [aspectRatio, setAspectRatio] = useState(3);
 	const imageHeight = Math.max(120, width / aspectRatio);
@@ -284,7 +300,7 @@ function BannerSlide({ banner, width, onPress }) {
 	);
 }
 
-function BannerCarousel({ banners, width, onBannerPress }) {
+function BannerCarousel({ banners, width, onBannerPress, isAdmin, isUpdatingBanner, onEditBanner }) {
 	const [activeIndex, setActiveIndex] = useState(0);
 
 	useEffect(() => {
@@ -328,6 +344,20 @@ function BannerCarousel({ banners, width, onBannerPress }) {
 					/>
 				)}
 			/>
+			{isAdmin ? (
+				<TouchableOpacity
+					style={styles.editBannerButton}
+					onPress={() => onEditBanner(banners[activeIndex])}
+					disabled={isUpdatingBanner}
+					activeOpacity={0.7}
+					accessibilityRole="button"
+					accessibilityLabel="Alterar banner exibido"
+				>
+					{isUpdatingBanner
+						? <ActivityIndicator size="small" color={colors.white} />
+						: <Feather name="edit-2" size={17} color={colors.white} />}
+				</TouchableOpacity>
+			) : null}
 			{banners.length > 1 ? (
 				<View style={styles.promoDots} accessibilityLabel={`Banner ${activeIndex + 1} de ${banners.length}`}>
 					{banners.map((banner, index) => (
@@ -440,9 +470,12 @@ export default function Home({ navigation, route }) {
 	const [selectedCategories, setSelectedCategories] = useState(['HortiFruti']);
 	const [priceSortDirection, setPriceSortDirection] = useState(null);
 	const [promoBanners, setPromoBanners] = useState([]);
+	const [isAdmin, setIsAdmin] = useState(false);
+	const [isUpdatingBanner, setIsUpdatingBanner] = useState(false);
 	const [products, setProducts] = useState(initialProducts);
 	const [favoriteIds, setFavoriteIds] = useState([]);
 	const [cartProductIds, setCartProductIds] = useState([]);
+	const bannerUpdateInProgress = useRef(false);
 	const pendingCartProductIds = useRef(new Set());
 	const filterSheetTranslateY = useRef(new Animated.Value(0)).current;
 	const promoBannerWidth = Math.max(0, windowWidth - 36);
@@ -470,6 +503,29 @@ export default function Home({ navigation, route }) {
 				console.error('Não foi possível carregar os banners promocionais.', error);
 			},
 		);
+	}, []);
+
+	useEffect(() => {
+		let active = true;
+		let latestRoleRequest = 0;
+		const unsubscribe = onAuthStateChanged(auth, async (user) => {
+			const request = ++latestRoleRequest;
+			if (!user) {
+				if (active) setIsAdmin(false);
+				return;
+			}
+			try {
+				const role = await getUserRole(user);
+				if (active && request === latestRoleRequest) setIsAdmin(role === 'admin');
+			} catch (error) {
+				console.error('Não foi possível verificar o papel do usuário na Home.', error);
+				if (active && request === latestRoleRequest) setIsAdmin(false);
+			}
+		});
+		return () => {
+			active = false;
+			unsubscribe();
+		};
 	}, []);
 
 	useEffect(() => onSnapshot(
@@ -746,6 +802,87 @@ export default function Home({ navigation, route }) {
 		}
 	}
 
+	async function handleEditBanner(banner) {
+		if (bannerUpdateInProgress.current) return;
+		if (!banner?.id) {
+			Alert.alert('Banner promocional', 'Não foi possível identificar o banner selecionado.');
+			return;
+		}
+
+		try {
+			const user = auth.currentUser;
+			if (!user || await getUserRole(user) !== 'admin') {
+				setIsAdmin(false);
+				Alert.alert('Acesso restrito', 'Somente um administrador pode alterar os banners.');
+				return;
+			}
+
+			const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+			if (!permission.granted) {
+				Alert.alert('Permissão necessária', 'Permita o acesso à galeria para selecionar o banner.');
+				return;
+			}
+
+			const result = await ImagePicker.launchImageLibraryAsync({
+				mediaTypes: ['images'],
+				allowsEditing: true,
+				quality: 0.85,
+			});
+			if (result.canceled) return;
+
+			const image = result.assets?.[0];
+			if (!image?.uri) {
+				Alert.alert('Banner promocional', 'Não foi possível carregar a imagem selecionada.');
+				return;
+			}
+
+			bannerUpdateInProgress.current = true;
+			setIsUpdatingBanner(true);
+			const extension = image.mimeType?.split('/')[1];
+			const imageRef = ref(
+				storage,
+				`banners/${banner.id}/${Date.now()}.${extension === 'png' || extension === 'webp' ? extension : 'jpg'}`,
+			);
+			let uploaded = false;
+			try {
+				const response = await fetch(image.uri);
+				if (!response.ok) throw new Error('Não foi possível ler a imagem selecionada.');
+				const blob = await response.blob();
+				try {
+					await uploadBytes(imageRef, blob, { contentType: image.mimeType || 'image/jpeg' });
+				} finally {
+					if (typeof blob.close === 'function') blob.close();
+				}
+				uploaded = true;
+				const imageUrl = await getDownloadURL(imageRef);
+				await updateDoc(doc(db, 'banners', banner.id), {
+					imageUrl,
+					updatedAt: serverTimestamp(),
+				});
+				setPromoBanners((currentBanners) => currentBanners.map((currentBanner) => (
+					currentBanner.id === banner.id
+						? { ...currentBanner, imageUrl }
+						: currentBanner
+				)));
+			} catch (error) {
+				if (uploaded) {
+					try {
+						await deleteObject(imageRef);
+					} catch (cleanupError) {
+						console.error('Não foi possível remover o upload incompleto do banner.', cleanupError);
+					}
+				}
+				throw error;
+			}
+		} catch (error) {
+			console.error('Não foi possível atualizar o banner promocional.', error);
+			Alert.alert('Banner promocional', 'Não foi possível atualizar o banner. Tente novamente.');
+		} finally {
+			bannerUpdateInProgress.current = false;
+			setIsUpdatingBanner(false);
+		}
+	}
+
 	return (
 		<SafeAreaScreen style={styles.safeArea} edges={[]}>
 			<StatusBar backgroundColor={colors.green} barStyle="light-content" />
@@ -791,41 +928,45 @@ export default function Home({ navigation, route }) {
 							accessibilityLabel="Pesquisar produtos e categorias"
 						/>
 					</View>
-					{!isSearching && (
-						<>
-							<BannerCarousel
-								banners={promoBanners}
-								width={promoBannerWidth}
-								onBannerPress={handleBannerPress}
-							/>
-							<ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesRow}>
-								<TouchableOpacity
-									style={styles.categoryFilter}
-									onPress={() => setIsFilterModalVisible(true)}
-									activeOpacity={0.8}
-									accessibilityRole="button"
-									accessibilityLabel="Abrir filtros de produtos"
-								>
-									<Feather name="sliders" size={17} color={colors.white} />
-								</TouchableOpacity>
-								{filterOptions.map((option) => (
-									<TouchableOpacity
-										key={option.name}
-										style={[styles.category, isFilterSelected(option) && styles.selectedCategory]}
-										onPress={() => selectFilter(option)}
-										accessibilityRole="button"
-										accessibilityState={{ selected: isFilterSelected(option) }}
-									>
-										<Text style={styles.categoryText}>
-											{option.type === 'price'
-												? `Preço ${priceSortDirection === 'ascending' ? '↑' : priceSortDirection === 'descending' ? '↓' : ''}`
-												: option.name}
-										</Text>
-									</TouchableOpacity>
-								))}
-							</ScrollView>
-						</>
-					)}
+					<BannerCarousel
+						banners={promoBanners}
+						width={promoBannerWidth}
+						onBannerPress={handleBannerPress}
+						isAdmin={isAdmin}
+						isUpdatingBanner={isUpdatingBanner}
+						onEditBanner={handleEditBanner}
+					/>
+					<ScrollView
+						horizontal
+						style={styles.categoriesBar}
+						showsHorizontalScrollIndicator={false}
+						contentContainerStyle={styles.categoriesRow}
+					>
+						<TouchableOpacity
+							style={styles.categoryFilter}
+							onPress={() => setIsFilterModalVisible(true)}
+							activeOpacity={0.8}
+							accessibilityRole="button"
+							accessibilityLabel="Abrir filtros de produtos"
+						>
+							<Feather name="sliders" size={17} color={colors.white} />
+						</TouchableOpacity>
+						{filterOptions.map((option) => (
+							<TouchableOpacity
+								key={option.name}
+								style={[styles.category, isFilterSelected(option) && styles.selectedCategory]}
+								onPress={() => selectFilter(option)}
+								accessibilityRole="button"
+								accessibilityState={{ selected: isFilterSelected(option) }}
+							>
+								<Text style={styles.categoryText}>
+									{option.type === 'price'
+										? `Preço ${priceSortDirection === 'ascending' ? '↑' : priceSortDirection === 'descending' ? '↓' : ''}`
+										: option.name}
+								</Text>
+							</TouchableOpacity>
+						))}
+					</ScrollView>
 					<View style={styles.scrollContent}>
 						{isSearching ? (
 							<>
@@ -841,7 +982,7 @@ export default function Home({ navigation, route }) {
 										</View>
 									</View>
 								)}
-								{matchingProducts.length > 0 && (
+								{matchingProducts.length > 0 ? (
 									<ProductSection
 										title="Produtos encontrados"
 										products={matchingProducts}
@@ -852,9 +993,8 @@ export default function Home({ navigation, route }) {
 										onToggleFavorite={handleToggleFavorite}
 										onToggleCart={handleToggleCart}
 									/>
-								)}
-								{matchingCategories.length === 0 && matchingProducts.length === 0 && (
-									<Text style={styles.noSearchResults}>Nenhum produto ou categoria encontrado.</Text>
+								) : (
+									<EmptyProductsState />
 								)}
 							</>
 						) : (
@@ -866,7 +1006,7 @@ export default function Home({ navigation, route }) {
 										<ProductSection title="Produtos" products={displayedCategoryProducts} cardWidth={productCardWidth} navigation={navigation} favoriteIds={favoriteIds} cartProductIds={cartProductIds} onToggleFavorite={handleToggleFavorite} onToggleCart={handleToggleCart} />
 									</>
 								) : (
-									<Text style={styles.noSearchResults}>Ainda não há produtos nesta categoria.</Text>
+									<EmptyProductsState />
 								)}
 							</>
 						)}
@@ -1039,7 +1179,8 @@ const styles = StyleSheet.create({
 		flexGrow: 1,
 	},
 	contentArea: {
-		flexGrow: 1,
+		flex: 1,
+		justifyContent: 'flex-start',
 		paddingTop: 18,
 		paddingBottom: 12,
 		backgroundColor: '#F1F3F5',
@@ -1187,9 +1328,27 @@ const styles = StyleSheet.create({
 		paddingVertical: 0,
 	},
 	promoCarousel: {
-		marginTop: 12,
+		marginTop: 14,
 		marginHorizontal: 18,
 		marginBottom: 16,
+		position: 'relative',
+	},
+	editBannerButton: {
+		position: 'absolute',
+		top: 12,
+		right: 12,
+		zIndex: 1,
+		width: 42,
+		height: 42,
+		borderRadius: 21,
+		backgroundColor: colors.lightGreen,
+		alignItems: 'center',
+		justifyContent: 'center',
+		shadowColor: '#000000',
+		shadowOffset: { width: 0, height: 2 },
+		shadowOpacity: 0.25,
+		shadowRadius: 4,
+		elevation: 4,
 	},
 	promoEmptyState: {
 		minHeight: 116,
@@ -1250,11 +1409,16 @@ const styles = StyleSheet.create({
 		width: 16,
 		backgroundColor: colors.green,
 	},
+	categoriesBar: {
+		height: 34,
+		flexGrow: 0,
+		flexShrink: 0,
+		marginTop: 16,
+		marginBottom: 16,
+	},
 	categoriesRow: {
 		paddingHorizontal: 18,
 		gap: 8,
-		paddingVertical: 12,
-		marginBottom: 4,
 		alignItems: 'center',
 	},
 	categoryFilter: {
@@ -1364,7 +1528,27 @@ const styles = StyleSheet.create({
 	},
 
 	scrollContent: {
+		flex: 1,
 		paddingBottom: 18,
+	},
+	emptyProducts: {
+		flex: 1,
+		justifyContent: 'center',
+		alignItems: 'center',
+		paddingHorizontal: 24,
+	},
+	emptyProductsTitle: {
+		marginTop: 12,
+		color: '#1B4B3D',
+		fontFamily: 'Montserrat_700Bold',
+		fontSize: 16,
+	},
+	emptyProductsDescription: {
+		marginTop: 4,
+		color: '#6B7280',
+		fontFamily: 'Montserrat_400Regular',
+		fontSize: 13,
+		textAlign: 'center',
 	},
 	searchResults: {
 		paddingHorizontal: 18,
@@ -1375,13 +1559,6 @@ const styles = StyleSheet.create({
 		flexWrap: 'wrap',
 		gap: 6,
 		marginTop: 8,
-	},
-	noSearchResults: {
-		color: colors.muted,
-		fontFamily: 'Montserrat_400Regular',
-		fontSize: 13,
-		marginHorizontal: 18,
-		marginTop: 14,
 	},
 	section: {
 		marginTop: 6,

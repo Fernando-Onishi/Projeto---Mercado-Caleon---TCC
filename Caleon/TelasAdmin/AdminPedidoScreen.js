@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
+import { useFonts } from 'expo-font';
 import { Alert, Image, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import SafeAreaScreen from '../Componentes/SafeAreaScreen';
+import AdminScreenLayout from '../Componentes/AdminScreenLayout';
+import AdminNotificationsModal from '../Componentes/AdminNotificationsModal';
 import CircularIconButton from '../Componentes/CircularIconButton';
 import Feather from '@expo/vector-icons/Feather';
 import NavegacaoAdmin from '../Componentes/NavegacaoAdmin';
+import { ADMIN_THEME } from '../Config/AdminTheme';
 
-const C = { green: '#1B4B3D', mint: '#40B190', bg: '#F1F3F5', ink: '#183F35', muted: '#7A8581', success: '#00AA6A', red: '#FF383C' };
+const C = ADMIN_THEME.colors;
 const referenceOrder = {
 	id: '897',
 	customer: 'Christian Godoi',
@@ -25,13 +28,21 @@ const toCents = (value) => Number.isFinite(Number(value)) ? Math.round(Number(va
 const formatCurrency = (cents) => (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
 export default function AdminPedidoScreen({ navigation, route, userRole }) {
+	const [fontsLoaded] = useFonts({
+		LilitaOne_400Regular: require('@expo-google-fonts/lilita-one/400Regular/LilitaOne_400Regular.ttf'),
+		Montserrat_400Regular: require('@expo-google-fonts/montserrat/400Regular/Montserrat_400Regular.ttf'),
+		Montserrat_500Medium: require('@expo-google-fonts/montserrat/500Medium/Montserrat_500Medium.ttf'),
+		Montserrat_700Bold: require('@expo-google-fonts/montserrat/700Bold/Montserrat_700Bold.ttf'),
+	});
 	const order = route?.params?.order || referenceOrder;
 	const orderId = route?.params?.orderId || order.id || referenceOrder.id;
 	const items = Array.isArray(order.items) ? order.items : referenceOrder.items;
 	const [checked, setChecked] = useState(() => order.checkedItemIds || referenceOrder.checkedItemIds);
+	const [notificationsVisible, setNotificationsVisible] = useState(false);
 	const checkedCount = items.filter((item) => checked.includes(item.id)).length;
 	const subtotalCents = items.reduce((sum, item) => sum + toCents(item.price), 0);
 	const serviceFeeCents = toCents(order.serviceFee ?? referenceOrder.serviceFee);
+	if (!fontsLoaded) return null;
 
 	function toggleItem(itemId) {
 		setChecked((current) => current.includes(itemId) ? current.filter((id) => id !== itemId) : [...current, itemId]);
@@ -64,16 +75,26 @@ export default function AdminPedidoScreen({ navigation, route, userRole }) {
 	}
 
 	return (
-		<SafeAreaScreen style={styles.safe} edges={['top', 'bottom']}>
+		<>
 			<StatusBar barStyle="light-content" backgroundColor={C.green} />
-			<View style={styles.topbar}>
-				<View style={styles.brandMark}><Feather name="user" size={17} color="#FFFFFF" /></View>
+			<AdminNotificationsModal
+				visible={notificationsVisible}
+				onClose={() => setNotificationsVisible(false)}
+				navigation={navigation}
+			/>
+			<AdminScreenLayout
+				headerHeight={72}
+				contentStyle={styles.contentPanel}
+				headerContent={<View style={styles.topbar}>
+				<View style={styles.brandMark}><Feather name="user" size={22} color={C.white} /></View>
 				<View style={styles.brandCopy}><Text style={styles.kicker}>Painel Operacional</Text><Text style={styles.greeting}>Olá, Administrador</Text></View>
-				<CircularIconButton size={24} icon={<Feather name="bell" size={16} color="#FFFFFF" />} onPress={() => Alert.alert('Notificações', 'Os pedidos ainda não estão conectados ao aplicativo.')} accessibilityLabel="Notificações" />
-			</View>
+				<CircularIconButton size={40} borderRadius={12} icon={<Feather name="bell" size={20} color={C.white} />} onPress={() => setNotificationsVisible(true)} accessibilityLabel="Abrir notificações" />
+			</View>}
+				footerContent={<NavegacaoAdmin navigation={navigation} activeTab="Início" showAdd={userRole === 'admin'} />}
+			>
 			<ScrollView style={styles.screen} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
 				<View style={styles.pageTitleRow}>
-					<CircularIconButton size={24} icon={<Feather name="chevron-left" size={17} color="#FFFFFF" />} onPress={() => navigation.goBack()} accessibilityLabel="Voltar" />
+					<CircularIconButton size={40} borderRadius={12} icon={<Feather name="chevron-left" size={27} color={C.white} />} onPress={() => navigation.goBack()} accessibilityLabel="Voltar" />
 					<Text style={styles.pageTitle}>Detalhe do Pedido</Text>
 				</View>
 				<View style={styles.customerCard}>
@@ -112,53 +133,53 @@ export default function AdminPedidoScreen({ navigation, route, userRole }) {
 					<TouchableOpacity style={styles.finishButton} onPress={completeOrder}><Text style={styles.buttonText}>Concluir separação</Text></TouchableOpacity>
 				</View>
 			</ScrollView>
-			<NavegacaoAdmin navigation={navigation} activeTab="Início" showAdd={userRole === 'admin'} />
-		</SafeAreaScreen>
+			</AdminScreenLayout>
+		</>
 	);
 }
 
 const styles = StyleSheet.create({
-	safe: { flex: 1, backgroundColor: C.green },
-	topbar: { minHeight: 52, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 8 },
-	brandMark: { width: 28, height: 28, borderRadius: 14, backgroundColor: C.mint, alignItems: 'center', justifyContent: 'center' },
+	topbar: { minHeight: 72, paddingHorizontal: ADMIN_THEME.layout.contentPadding, flexDirection: 'row', alignItems: 'center', gap: 12 },
+	brandMark: { width: 40, height: 40, borderRadius: 12, backgroundColor: C.mint, alignItems: 'center', justifyContent: 'center' },
 	brandCopy: { flex: 1 },
-	kicker: { color: '#7DE1C4', fontSize: 9, fontWeight: '800' },
-	greeting: { color: '#FFFFFF', fontSize: 13, fontWeight: '800', marginTop: 2 },
-	screen: { flex: 1, backgroundColor: C.bg, borderTopLeftRadius: 26, borderTopRightRadius: 26, overflow: 'hidden' },
-	content: { padding: 13, paddingBottom: 24 },
-	pageTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 13, marginTop: 3 },
-	pageTitle: { color: '#111715', fontSize: 14, fontWeight: '900' },
-	customerCard: { flexDirection: 'row', alignItems: 'center', gap: 7, padding: 8, backgroundColor: '#FFFFFF', borderRadius: 10, marginBottom: 8, elevation: 2 },
-	avatar: { width: 30, height: 30, borderRadius: 15, backgroundColor: '#E0E3E1', alignItems: 'center', justifyContent: 'center' },
+	kicker: { color: '#A8E8D1', fontFamily: ADMIN_THEME.fonts.bold, fontSize: 10 },
+	greeting: { color: C.white, fontFamily: ADMIN_THEME.fonts.bold, fontSize: 17, marginTop: 2 },
+	screen: { flex: 1 },
+	contentPanel: { paddingHorizontal: 0 },
+	content: { paddingHorizontal: ADMIN_THEME.layout.headerSidePadding, paddingTop: ADMIN_THEME.layout.contentTopSpacing, paddingBottom: 8 },
+	pageTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 23, marginTop: 2 },
+	pageTitle: { color: '#111715', fontFamily: ADMIN_THEME.fonts.display, fontSize: 25 },
+	customerCard: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, backgroundColor: C.white, borderRadius: ADMIN_THEME.layout.cardRadius, marginBottom: 12, elevation: 2 },
+	avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#E0E3E1', alignItems: 'center', justifyContent: 'center' },
 	customerInfo: { flex: 1 },
-	customerName: { color: C.ink, fontSize: 12, fontWeight: '800' },
-	meta: { color: C.muted, fontSize: 9, marginTop: 3 },
-	orderNumber: { color: C.green, backgroundColor: '#D8F6E9', borderWidth: 1, borderColor: C.mint, borderRadius: 14, paddingHorizontal: 8, paddingVertical: 3, fontWeight: '900' },
-	itemsCard: { backgroundColor: '#FFFFFF', borderRadius: 11, padding: 7, elevation: 2 },
+	customerName: { color: C.ink, fontFamily: ADMIN_THEME.fonts.bold, fontSize: 15 },
+	meta: { color: C.muted, fontFamily: ADMIN_THEME.fonts.body, fontSize: 11, marginTop: 3 },
+	orderNumber: { color: C.green, backgroundColor: '#D8F6E9', borderWidth: 1, borderColor: C.mint, borderRadius: 14, paddingHorizontal: 10, paddingVertical: 5, fontFamily: ADMIN_THEME.fonts.bold },
+	itemsCard: { backgroundColor: C.white, borderRadius: ADMIN_THEME.layout.cardRadius, padding: 14, elevation: 2 },
 	itemsHeading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-	itemsTitle: { color: C.ink, fontSize: 13, fontWeight: '900' },
+	itemsTitle: { color: C.ink, fontFamily: ADMIN_THEME.fonts.bold, fontSize: 16 },
 	countBadge: { color: '#FFFFFF', backgroundColor: C.mint, overflow: 'hidden', borderRadius: 7, paddingHorizontal: 5 },
-	counter: { color: '#D08C18', fontSize: 9, fontWeight: '800' },
-	itemRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 5, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#E8EEEB' },
-	productThumb: { width: 28, height: 28, borderRadius: 6, backgroundColor: '#F4F5F4', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+	counter: { color: '#D08C18', fontFamily: ADMIN_THEME.fonts.bold, fontSize: 11 },
+	itemRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#E8EEEB' },
+	productThumb: { width: 44, height: 44, borderRadius: 8, backgroundColor: '#F4F5F4', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
 	productImage: { width: '100%', height: '100%' },
 	productEmoji: { fontSize: 17 },
 	itemInfo: { flex: 1, minWidth: 60 },
-	itemName: { color: C.ink, fontSize: 11, fontWeight: '800' },
+	itemName: { color: C.ink, fontFamily: ADMIN_THEME.fonts.bold, fontSize: 14 },
 	priceColumn: { alignItems: 'flex-end' },
-	qty: { color: C.ink, fontSize: 10, fontWeight: '700' },
-	itemPrice: { color: C.success, fontSize: 12, fontWeight: '900', marginTop: 2 },
+	qty: { color: C.ink, fontFamily: ADMIN_THEME.fonts.medium, fontSize: 11 },
+	itemPrice: { color: C.success, fontFamily: ADMIN_THEME.fonts.bold, fontSize: 14, marginTop: 2 },
 	check: { width: 21, height: 21, borderRadius: 6, borderWidth: 1, borderColor: C.success, alignItems: 'center', justifyContent: 'center' },
 	checked: { backgroundColor: C.success },
 	totals: { paddingTop: 9, paddingHorizontal: 2 },
 	totalLine: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4, gap: 10 },
-	totalLabel: { color: C.muted, fontSize: 10 },
-	totalValue: { color: C.success, fontSize: 10, fontWeight: '800' },
-	payment: { color: C.success, fontSize: 9, fontWeight: '800' },
+	totalLabel: { color: C.muted, fontFamily: ADMIN_THEME.fonts.body, fontSize: 12 },
+	totalValue: { color: C.success, fontFamily: ADMIN_THEME.fonts.bold, fontSize: 12 },
+	payment: { color: C.success, fontFamily: ADMIN_THEME.fonts.bold, fontSize: 11 },
 	dashed: { borderTopWidth: 1, borderColor: '#D6DEDA', borderStyle: 'dashed', marginVertical: 5 },
-	grandTotal: { color: C.success, fontSize: 15, fontWeight: '900' },
-	actions: { flexDirection: 'row', gap: 8, marginTop: 11 },
-	cancelButton: { flex: 1, backgroundColor: C.red, borderRadius: 12, alignItems: 'center', paddingVertical: 8 },
-	finishButton: { flex: 1, backgroundColor: C.success, borderRadius: 12, alignItems: 'center', paddingVertical: 8 },
-	buttonText: { color: '#FFFFFF', fontSize: 8, fontWeight: '900' },
+	grandTotal: { color: C.success, fontFamily: ADMIN_THEME.fonts.bold, fontSize: 20 },
+	actions: { flexDirection: 'row', gap: 10, marginTop: 14 },
+	cancelButton: { flex: 1, minHeight: 48, backgroundColor: C.red, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
+	finishButton: { flex: 1, minHeight: 48, backgroundColor: C.success, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
+	buttonText: { color: C.white, fontFamily: ADMIN_THEME.fonts.bold, fontSize: 12, textAlign: 'center' },
 });

@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react';
+import { useFonts } from 'expo-font';
 import {
 	ActivityIndicator,
 	StatusBar,
@@ -14,13 +15,9 @@ import Feather from '@expo/vector-icons/Feather';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import CircularIconButton from '../Componentes/CircularIconButton';
 import NavegacaoAdmin from '../Componentes/NavegacaoAdmin';
+import { ADMIN_THEME } from '../Config/AdminTheme';
 
-const COLORS = {
-	green: '#1B4B3D',
-	mint: '#40B190',
-	background: '#F1F3F5',
-	white: '#FFFFFF',
-};
+const COLORS = ADMIN_THEME.colors;
 
 const BARCODE_TYPES = {
 	qrcode: ['qr'],
@@ -33,6 +30,11 @@ function formatBarcodeType(type) {
 }
 
 export default function AdminQrCode({ navigation }) {
+	useFonts({
+		LilitaOne_400Regular: require('@expo-google-fonts/lilita-one/400Regular/LilitaOne_400Regular.ttf'),
+		Montserrat_400Regular: require('@expo-google-fonts/montserrat/400Regular/Montserrat_400Regular.ttf'),
+		Montserrat_700Bold: require('@expo-google-fonts/montserrat/700Bold/Montserrat_700Bold.ttf'),
+	});
 	const { height, width } = useWindowDimensions();
 	const insets = useSafeAreaInsets();
 	const isFocused = useIsFocused();
@@ -108,7 +110,7 @@ export default function AdminQrCode({ navigation }) {
 					<StatusBar barStyle="light-content" backgroundColor={COLORS.green} />
 					<CircularIconButton
 						style={[styles.permissionBack, { top: insets.top + 12 }]}
-						icon={<Feather name="chevron-left" size={30} color={COLORS.white} />}
+						icon={<Feather name="chevron-left" size={27} color={COLORS.white} />}
 						onPress={() => navigation.goBack()}
 						accessibilityLabel="Voltar"
 					/>
@@ -148,7 +150,7 @@ export default function AdminQrCode({ navigation }) {
 				<View style={styles.cameraErrorPanel}>
 					<CircularIconButton
 						style={[styles.permissionBack, { top: insets.top + 12 }]}
-						icon={<Feather name="chevron-left" size={30} color={COLORS.white} />}
+						icon={<Feather name="chevron-left" size={27} color={COLORS.white} />}
 						onPress={() => navigation.goBack()}
 						accessibilityLabel="Voltar"
 					/>
@@ -177,7 +179,7 @@ export default function AdminQrCode({ navigation }) {
 							accessibilityLabel="Voltar"
 						/>
 						<CircularIconButton
-							icon={<Feather name={flashAtivo ? 'zap' : 'zap-off'} size={30} color={COLORS.white} />}
+							icon={<Feather name={flashAtivo ? 'zap' : 'zap-off'} size={24} color={COLORS.white} />}
 							onPress={alternarFlash}
 							accessibilityState={{ selected: flashAtivo }}
 							accessibilityLabel={flashAtivo ? 'Desligar lanterna' : 'Ligar lanterna'}
@@ -225,7 +227,7 @@ export default function AdminQrCode({ navigation }) {
 						</View>
 						<View style={styles.flipControl}>
 							<CircularIconButton
-								icon={<Feather name="refresh-cw" size={30} color={COLORS.white} />}
+								icon={<Feather name="refresh-cw" size={24} color={COLORS.white} />}
 								onPress={alternarLadoCamera}
 								accessibilityLabel={facing === 'back' ? 'Usar câmera frontal' : 'Usar câmera traseira'}
 							/>
@@ -262,7 +264,7 @@ const styles = StyleSheet.create({
 	scanFrame: {
 		borderWidth: 3,
 		borderColor: COLORS.green,
-		borderRadius: 18,
+		borderRadius: ADMIN_THEME.layout.cardRadius,
 		backgroundColor: 'transparent',
 		flexShrink: 0,
 	},
@@ -295,26 +297,27 @@ const styles = StyleSheet.create({
 		right: 20,
 		zIndex: 3,
 		padding: 18,
-		borderRadius: 16,
+		borderRadius: ADMIN_THEME.layout.cardRadius,
 		backgroundColor: 'rgba(27, 75, 61, 0.96)',
 	},
 	resultTitle: {
 		color: COLORS.white,
-		fontSize: 18,
-		fontWeight: '700',
+		fontFamily: ADMIN_THEME.fonts.display,
+		fontSize: 24,
 		textAlign: 'center',
 	},
 	resultType: {
 		marginTop: 6,
 		color: '#A8E8D1',
+		fontFamily: ADMIN_THEME.fonts.bold,
 		fontSize: 14,
-		fontWeight: '700',
 		textAlign: 'center',
 	},
 	resultData: {
 		marginTop: 8,
 		marginBottom: 14,
 		color: COLORS.white,
+		fontFamily: ADMIN_THEME.fonts.body,
 		fontSize: 14,
 		textAlign: 'center',
 	},
@@ -328,8 +331,8 @@ const styles = StyleSheet.create({
 	},
 	primaryButtonText: {
 		color: COLORS.white,
-		fontSize: 15,
-		fontWeight: '700',
+		fontFamily: ADMIN_THEME.fonts.bold,
+		fontSize: 14,
 	},
 	permissionScreen: {
 		flex: 1,
@@ -356,14 +359,15 @@ const styles = StyleSheet.create({
 	},
 	permissionTitle: {
 		color: COLORS.white,
-		fontSize: 22,
-		fontWeight: '700',
+		fontFamily: ADMIN_THEME.fonts.display,
+		fontSize: 26,
 		textAlign: 'center',
 	},
 	permissionMessage: {
 		color: COLORS.background,
-		fontSize: 15,
-		lineHeight: 22,
+		fontFamily: ADMIN_THEME.fonts.body,
+		fontSize: 14,
+		lineHeight: 21,
 		textAlign: 'center',
 	},
 	cameraErrorPanel: {
@@ -376,7 +380,8 @@ const styles = StyleSheet.create({
 	},
 	cameraErrorText: {
 		color: COLORS.white,
-		fontSize: 16,
+		fontFamily: ADMIN_THEME.fonts.body,
+		fontSize: 15,
 		textAlign: 'center',
 	},
 	footer: {

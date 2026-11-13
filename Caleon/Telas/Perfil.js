@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
 	Alert,
+	ActivityIndicator,
 	Image,
 	KeyboardAvoidingView,
 	Modal,
@@ -16,16 +17,18 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
+import { FontAwesome5 } from '@expo/vector-icons';
 import Feather from '@expo/vector-icons/Feather';
 import Fontisto from '@expo/vector-icons/Fontisto';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { signOut, updateEmail, updatePassword, updateProfile } from 'firebase/auth';
+import { onAuthStateChanged, signOut, updateEmail, updatePassword, updateProfile } from 'firebase/auth';
 import { auth } from '../Config/FireBaseConfig';
 import { getProfileStorageKey } from '../Config/PerfilStorage';
 import NavegacaoInferior from '../Componentes/NavegacaoInferior';
 import CircularIconButton from '../Componentes/CircularIconButton';
+import { getUserRole } from '../src/utils/getUserRole';
 
 const COLORS = {
 	darkGreen: '#1B4B3D',
@@ -76,19 +79,45 @@ function formatPhone(value) {
 export default function Perfil({ navigation }) {
 	const { width } = useWindowDimensions();
 	const avatarSize = Math.min(250, width * 0.62);
-	const [fontsLoaded] = useFonts({
+	const [fontsLoaded, fontError] = useFonts({
 		LilitaOne_400Regular: require('@expo-google-fonts/lilita-one/400Regular/LilitaOne_400Regular.ttf'),
 		Montserrat_400Regular: require('@expo-google-fonts/montserrat/400Regular/Montserrat_400Regular.ttf'),
 		Montserrat_700Bold: require('@expo-google-fonts/montserrat/700Bold/Montserrat_700Bold.ttf'),
 	});
 	const [profile, setProfile] = useState(emptyFields);
 	const [savedProfile, setSavedProfile] = useState(emptyFields);
+	const [isAdmin, setIsAdmin] = useState(false);
 	const [isEditing, setIsEditing] = useState(false);
 	const [isPasswordVisible, setIsPasswordVisible] = useState(false);
 	const [isSaving, setIsSaving] = useState(false);
 	const [isLogoutModalVisible, setIsLogoutModalVisible] = useState(false);
 	const [isLoggingOut, setIsLoggingOut] = useState(false);
 	const [logoutError, setLogoutError] = useState('');
+
+	useEffect(() => {
+		let active = true;
+		let latestRoleRequest = 0;
+		const unsubscribe = onAuthStateChanged(auth, async (user) => {
+			const request = ++latestRoleRequest;
+			if (!user) {
+				if (active) setIsAdmin(false);
+				return;
+			}
+
+			try {
+				const role = await getUserRole(user);
+				if (active && request === latestRoleRequest) setIsAdmin(role === 'admin');
+			} catch (error) {
+				console.error('Não foi possível verificar o papel do usuário no perfil.', error);
+				if (active && request === latestRoleRequest) setIsAdmin(false);
+			}
+		});
+
+		return () => {
+			active = false;
+			unsubscribe();
+		};
+	}, []);
 
 	useEffect(() => {
 		let active = true;
@@ -115,7 +144,20 @@ export default function Perfil({ navigation }) {
 		return () => { active = false; };
 	}, []);
 
-	if (!fontsLoaded) return null;
+	useEffect(() => {
+		if (fontError) console.error('Não foi possível carregar as fontes do perfil; usando fontes do sistema.', fontError);
+	}, [fontError]);
+
+	if (!fontsLoaded && !fontError) {
+		return (
+			<SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+				<StatusBar style="light" backgroundColor={COLORS.darkGreen} />
+				<View style={styles.fontLoading}>
+					<ActivityIndicator size="large" color={COLORS.darkGreen} />
+				</View>
+			</SafeAreaView>
+		);
+	}
 
 	function updateField(key, value) {
 		const formattedValue = key === 'cep'
@@ -231,6 +273,10 @@ export default function Perfil({ navigation }) {
 		setIsLogoutModalVisible(true);
 	}
 
+	function returnToAdminPanel() {
+		navigation.reset({ index: 0, routes: [{ name: 'AdminHome' }] });
+	}
+
 	function explainPasswordVisibility() {
 		Alert.alert(
 			'Senha protegida',
@@ -293,23 +339,36 @@ export default function Perfil({ navigation }) {
 								onPress={goBack}
 								accessibilityLabel="Voltar"
 							/>
-							<TouchableOpacity
-								style={styles.logoutButton}
-								onPress={confirmLogout}
-								accessibilityRole="button"
-								accessibilityLabel="Sair da conta"
-							>
-								<Ionicons name="exit-outline" size={24} color={COLORS.white} />
-							</TouchableOpacity>
-							<TouchableOpacity
-								style={styles.historyButton}
-								onPress={() => navigation.navigate('TelaHistoricoPedidos')}
-								activeOpacity={0.8}
-								accessibilityRole="button"
-								accessibilityLabel="Histórico de pedidos"
-							>
-								<Fontisto name="history" size={24} color={COLORS.white} />
-							</TouchableOpacity>
+							<View style={styles.headerActionGroup}>
+								<TouchableOpacity
+									style={styles.logoutButton}
+									onPress={confirmLogout}
+									accessibilityRole="button"
+									accessibilityLabel="Sair da conta"
+								>
+									<Ionicons name="exit-outline" size={24} color={COLORS.white} />
+								</TouchableOpacity>
+								<TouchableOpacity
+									style={styles.historyButton}
+									onPress={() => navigation.navigate('TelaHistoricoPedidos')}
+									activeOpacity={0.8}
+									accessibilityRole="button"
+									accessibilityLabel="Histórico de pedidos"
+								>
+									<Fontisto name="history" size={24} color={COLORS.white} />
+								</TouchableOpacity>
+								{isAdmin ? (
+									<TouchableOpacity
+										style={styles.historyButton}
+										onPress={returnToAdminPanel}
+										activeOpacity={0.7}
+										accessibilityRole="button"
+										accessibilityLabel="Voltar ao Painel Admin"
+									>
+										<FontAwesome5 name="user-edit" size={24} color="white" />
+									</TouchableOpacity>
+								) : null}
+							</View>
 						</View>
 						<Text style={styles.title}>Perfil</Text>
 						{!isEditing ? (
@@ -453,6 +512,7 @@ export default function Perfil({ navigation }) {
 
 const styles = StyleSheet.create({
 	safeArea: { flex: 1, backgroundColor: COLORS.darkGreen },
+	fontLoading: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.background },
 	topBand: { height: 40, backgroundColor: COLORS.darkGreen },
 	screenPanel: {
 		flex: 1,
@@ -523,6 +583,11 @@ const styles = StyleSheet.create({
 		alignItems: 'center',
 		justifyContent: 'space-between',
 	},
+	headerActionGroup: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: 8,
+	},
 	backButton: {
 		width: 40,
 		height: 40,
@@ -538,8 +603,6 @@ const styles = StyleSheet.create({
 		backgroundColor: COLORS.cancel,
 		alignItems: 'center',
 		justifyContent: 'center',
-		marginLeft: 'auto',
-		marginRight: 12,
 	},
 	historyButton: {
 		width: 40,
@@ -586,7 +649,7 @@ const styles = StyleSheet.create({
 		height: 49,
 		borderRadius: 25,
 		borderWidth: 4,
-		borderColor: COLORS.white,
+		borderColor: "#F1F3F5",
 		backgroundColor: COLORS.mint,
 		alignItems: 'center',
 		justifyContent: 'center',

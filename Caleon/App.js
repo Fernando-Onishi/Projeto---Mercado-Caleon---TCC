@@ -17,16 +17,20 @@ import HistoricoPedidosScreen from './Telas/HistoricoPedidosScreen';
 import ProdutosCategoriaScreen from './Telas/ProdutosCategoriaScreen';
 import DetalheProduto from './Telas/detalheproduto';
 import AdminHome from './TelasAdmin/AdminHome';
+import AdminAdicionarProduto from './TelasAdmin/AdminAdicionarProduto';
 import ControleEstoque from './TelasAdmin/controleEstoque';
 import AdminPedido from './TelasAdmin/AdminPedidoScreen';
 import AdminProdutos from './TelasAdmin/AdminProdutos';
 import AdminQrCode from './TelasAdmin/AdminQrCode';
 import AdminConfiguracoes from './TelasAdmin/AdminConfiguracoes';
-import TelaHomeAdmin from './TelasAdmin/tela home admin';
+import { ProductModalProvider } from './Componentes/ProductModalContext';
+import { AdminNotificationsProvider } from './Componentes/AdminNotificationsContext';
 import NotificacaoGlobal from './Componentes/NotificacaoGlobal';
 import { getHomeRouteByRole, getUserRole } from './src/utils/getUserRole';
 
 const Stack = createNativeStackNavigator();
+const ADMIN_EMPLOYEE_ROLES = ['admin', 'employee'];
+const ADMIN_ONLY_ROLES = ['admin'];
 
 function RoleProtectedScreen({ allowedRoles, Screen, navigation, route }) {
 	const [isAuthorized, setIsAuthorized] = useState(false);
@@ -73,27 +77,27 @@ function RoleProtectedScreen({ allowedRoles, Screen, navigation, route }) {
 }
 
 function AdminHomeRoute({ navigation, route }) {
-	return <RoleProtectedScreen allowedRoles={['admin', 'employee']} Screen={AdminHome} navigation={navigation} route={route} />;
+	return <RoleProtectedScreen allowedRoles={ADMIN_EMPLOYEE_ROLES} Screen={AdminHome} navigation={navigation} route={route} />;
 }
 
-function AdminCreateProductRoute({ navigation, route }) {
-	return <RoleProtectedScreen allowedRoles={['admin']} Screen={TelaHomeAdmin} navigation={navigation} route={route} />;
+function AdminAddProductRoute({ navigation, route }) {
+	return <RoleProtectedScreen allowedRoles={ADMIN_ONLY_ROLES} Screen={AdminAdicionarProduto} navigation={navigation} route={route} />;
 }
 
 function AdminOrderRoute({ navigation, route }) {
-	return <RoleProtectedScreen allowedRoles={['admin', 'employee']} Screen={AdminPedido} navigation={navigation} route={route} />;
+	return <RoleProtectedScreen allowedRoles={ADMIN_EMPLOYEE_ROLES} Screen={AdminPedido} navigation={navigation} route={route} />;
 }
 
 function AdminProductsRoute({ navigation, route }) {
-	return <RoleProtectedScreen allowedRoles={['admin', 'employee']} Screen={AdminProdutos} navigation={navigation} route={route} />;
+	return <RoleProtectedScreen allowedRoles={ADMIN_EMPLOYEE_ROLES} Screen={AdminProdutos} navigation={navigation} route={route} />;
 }
 
 function AdminQrCodeRoute({ navigation, route }) {
-	return <RoleProtectedScreen allowedRoles={['admin', 'employee']} Screen={AdminQrCode} navigation={navigation} route={route} />;
+	return <RoleProtectedScreen allowedRoles={ADMIN_EMPLOYEE_ROLES} Screen={AdminQrCode} navigation={navigation} route={route} />;
 }
 
 function AdminSettingsRoute({ navigation, route }) {
-	return <RoleProtectedScreen allowedRoles={['admin', 'employee']} Screen={AdminConfiguracoes} navigation={navigation} route={route} />;
+	return <RoleProtectedScreen allowedRoles={ADMIN_EMPLOYEE_ROLES} Screen={AdminConfiguracoes} navigation={navigation} route={route} />;
 }
 
 function ControleEstoqueRoute({ navigation, route }) {
@@ -140,38 +144,33 @@ export default function App() {
 				</View>
 			) : (
 				<View style={styles.appRoot}>
-					<NavigationContainer>
-						<Stack.Navigator initialRouteName={initialRouteName} screenOptions={{ headerShown: false }}>
-							<Stack.Screen name="TelaLogin" component={TelaLogin} />
-							<Stack.Screen name="TelaCadastro" component={TelaCadastro} />
-							<Stack.Screen name="TelaHome" component={TelaHome} />
-							<Stack.Screen name="TelaSplash" component={TelaSplash} />
-							<Stack.Screen name="TelaProdutos" component={TelaProdutos} />
-							<Stack.Screen name="ProdutosCategoriaScreen" component={ProdutosCategoriaScreen} />
-							<Stack.Screen name="TelaFavorito" component={TelaFavorito} />
-							<Stack.Screen name="TelaSacola" component={TelaSacola} />
-							<Stack.Screen name="TelaPerfil" component={TelaPerfil} />
-							<Stack.Screen name="TelaHistoricoPedidos" component={HistoricoPedidosScreen} />
-							<Stack.Screen name="TelaDetalheProduto" component={DetalheProduto} />
-							<Stack.Screen name="AdminHome" component={AdminHomeRoute} />
-							<Stack.Screen name="AdminPedido" component={AdminOrderRoute} />
-							<Stack.Screen name="AdminProdutos" component={AdminProductsRoute} />
-							<Stack.Screen name="AdminQrCode" component={AdminQrCodeRoute} />
-							<Stack.Screen name="AdminConfiguracoes" component={AdminSettingsRoute} />
-							<Stack.Screen name="ControleEstoque" component={ControleEstoqueRoute} />
-							<Stack.Screen
-								name="AdminCriarProduto"
-								component={AdminCreateProductRoute}
-								options={{
-									presentation: 'transparentModal',
-									animation: 'none',
-									contentStyle: { backgroundColor: 'transparent' },
-									gestureEnabled: false,
-								}}
-							/>
-						</Stack.Navigator>
-					</NavigationContainer>
-					<NotificacaoGlobal />
+					<AdminNotificationsProvider>
+						<ProductModalProvider>
+							<NavigationContainer>
+							<Stack.Navigator initialRouteName={initialRouteName} screenOptions={{ headerShown: false }}>
+								<Stack.Screen name="TelaLogin" component={TelaLogin} />
+								<Stack.Screen name="TelaCadastro" component={TelaCadastro} />
+								<Stack.Screen name="TelaHome" component={TelaHome} />
+								<Stack.Screen name="TelaSplash" component={TelaSplash} />
+								<Stack.Screen name="TelaProdutos" component={TelaProdutos} />
+								<Stack.Screen name="ProdutosCategoriaScreen" component={ProdutosCategoriaScreen} />
+								<Stack.Screen name="TelaFavorito" component={TelaFavorito} />
+								<Stack.Screen name="TelaSacola" component={TelaSacola} />
+								<Stack.Screen name="TelaPerfil" component={TelaPerfil} />
+								<Stack.Screen name="TelaHistoricoPedidos" component={HistoricoPedidosScreen} />
+								<Stack.Screen name="TelaDetalheProduto" component={DetalheProduto} />
+								<Stack.Screen name="AdminHome" component={AdminHomeRoute} />
+								<Stack.Screen name="AdminAdicionarProduto" component={AdminAddProductRoute} />
+								<Stack.Screen name="AdminPedido" component={AdminOrderRoute} />
+								<Stack.Screen name="AdminProdutos" component={AdminProductsRoute} />
+								<Stack.Screen name="AdminQrCode" component={AdminQrCodeRoute} />
+								<Stack.Screen name="AdminConfiguracoes" component={AdminSettingsRoute} />
+								<Stack.Screen name="ControleEstoque" component={ControleEstoqueRoute} />
+								</Stack.Navigator>
+								</NavigationContainer>
+								<NotificacaoGlobal />
+							</ProductModalProvider>
+						</AdminNotificationsProvider>
 				</View>
 			)}
 		</SafeAreaProvider>

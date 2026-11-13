@@ -25,7 +25,9 @@ export default function NavegacaoInferior({ activeTab, navigation, onUnavailable
   function handlePress(tab) {
     if (tab.route) {
       if (tab.label !== activeTab) {
-        if (tab.label === 'Início' || tab.label === 'Perfil') {
+        if (tab.label === 'Perfil') {
+          navigation.push(tab.route);
+        } else if (tab.label === 'Início') {
           navigation.dispatch(StackActions.popTo(tab.route));
         } else {
           navigation.navigate(tab.route);
