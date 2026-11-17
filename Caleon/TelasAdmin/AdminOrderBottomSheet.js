@@ -101,7 +101,7 @@ function normalizeOrder(order) {
 	};
 }
 
-export default function AdminOrderBottomSheet({ order, onClose, onComplete }) {
+export default function AdminOrderBottomSheet({ order, onClose, onComplete, onCancelOrder }) {
 	const normalizedOrder = useMemo(() => order ? normalizeOrder(order) : null, [order]);
 	const [checkedIds, setCheckedIds] = useState([]);
 	const translateY = useRef(new Animated.Value(SHEET_HEIGHT)).current;
@@ -240,7 +240,7 @@ export default function AdminOrderBottomSheet({ order, onClose, onComplete }) {
 					</View>
 
 					<View style={styles.actions}>
-						<TouchableOpacity style={styles.cancelButton} onPress={closeSheet} accessibilityRole="button">
+						<TouchableOpacity style={styles.cancelButton} onPress={onCancelOrder || closeSheet} accessibilityRole="button">
 							<Text style={styles.buttonText}>Cancelar Compra</Text>
 						</TouchableOpacity>
 						<TouchableOpacity style={styles.finishButton} onPress={completeSeparation} accessibilityRole="button">

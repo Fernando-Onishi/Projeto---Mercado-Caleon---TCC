@@ -14,7 +14,7 @@ import {
 	useWindowDimensions,
 	View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import SafeAreaScreen from '../Componentes/SafeAreaScreen';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -150,12 +150,12 @@ export default function Perfil({ navigation }) {
 
 	if (!fontsLoaded && !fontError) {
 		return (
-			<SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+			<SafeAreaScreen style={styles.safeArea} edges={['top', 'bottom']}>
 				<StatusBar style="light" backgroundColor={COLORS.darkGreen} />
 				<View style={styles.fontLoading}>
 					<ActivityIndicator size="large" color={COLORS.darkGreen} />
 				</View>
-			</SafeAreaView>
+			</SafeAreaScreen>
 		);
 	}
 
@@ -290,7 +290,7 @@ export default function Perfil({ navigation }) {
 	}
 
 	return (
-		<SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+		<SafeAreaScreen style={styles.safeArea} edges={['top', 'bottom']}>
 			<StatusBar style="light" backgroundColor={COLORS.darkGreen} />
 			<Modal
 				visible={isLogoutModalVisible}
@@ -506,7 +506,7 @@ export default function Perfil({ navigation }) {
 				</KeyboardAvoidingView>
 				<NavegacaoInferior activeTab="Perfil" navigation={navigation} />
 			</View>
-		</SafeAreaView>
+		</SafeAreaScreen>
 	);
 }
 

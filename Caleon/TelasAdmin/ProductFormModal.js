@@ -1,8 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useFonts } from 'expo-font';
 import {
 	ActivityIndicator,
 	Alert,
+	Animated,
+	Easing,
 	Image,
 	KeyboardAvoidingView,
 	Modal,
@@ -151,9 +153,34 @@ export default function ProductFormModal({ visible, presentation = 'modal', prod
 		return () => { active = false; };
 	}, [productId, productFromRoute]);
 
+	// Folha que sobe de baixo (0 = escondida atrás da barra, 1 = aberta).
+	const isSheet = presentation !== 'screen';
+	const sheetProgress = useRef(new Animated.Value(isSheet ? 0 : 1)).current;
+	const isClosingRef = useRef(false);
+
+	useEffect(() => {
+		if (!isSheet || !visible) return;
+		Animated.timing(sheetProgress, {
+			toValue: 1,
+			duration: 300,
+			easing: Easing.out(Easing.cubic),
+			useNativeDriver: Platform.OS !== 'web',
+		}).start();
+	}, [isSheet, visible, sheetProgress]);
+
 	function closeModal() {
-		if (isSaving) return;
-		onClose?.();
+		if (isSaving || isClosingRef.current) return;
+		if (!isSheet) {
+			onClose?.();
+			return;
+		}
+		isClosingRef.current = true;
+		Animated.timing(sheetProgress, {
+			toValue: 0,
+			duration: 220,
+			easing: Easing.in(Easing.cubic),
+			useNativeDriver: Platform.OS !== 'web',
+		}).start(() => onClose?.());
 	}
 
 	function updateField(key, value) {
@@ -356,11 +383,13 @@ export default function ProductFormModal({ visible, presentation = 'modal', prod
 		}
 	}
 
+	// O cabeçalho verde fica visível em cima e a barra inferior embaixo; a folha ocupa o meio.
 	const modalInsets = {
-		paddingTop: insets.top + 82,
+		paddingTop: insets.top + 72,
 		paddingBottom: insets.bottom + ADMIN_THEME.layout.bottomBarHeight,
 	};
 	const sheetMaxHeight = Math.max(320, Math.min(windowHeight * 0.7, windowHeight - modalInsets.paddingTop - modalInsets.paddingBottom - 12));
+	const sheetTranslateY = sheetProgress.interpolate({ inputRange: [0, 1], outputRange: [sheetMaxHeight + 24, 0] });
 
 	return (
 		<>
@@ -369,10 +398,15 @@ export default function ProductFormModal({ visible, presentation = 'modal', prod
 					{presentation === 'screen' ? (
 						<View style={styles.screenSpacer} pointerEvents="none" />
 					) : (
-						<Pressable style={[styles.backdrop, { top: modalInsets.paddingTop, bottom: sheetMaxHeight + modalInsets.paddingBottom }]} onPress={closeModal} disabled={isSaving} />
+						<Animated.View style={[styles.backdrop, { top: modalInsets.paddingTop, bottom: modalInsets.paddingBottom, opacity: sheetProgress }]}>
+							<Pressable style={StyleSheet.absoluteFill} onPress={closeModal} disabled={isSaving} accessibilityLabel="Fechar formulário" />
+						</Animated.View>
 					)}
+					{/* A folha sobe de trás da barra inferior: o recorte termina onde a barra começa. */}
+					<View style={isSheet ? [styles.sheetClip, { bottom: modalInsets.paddingBottom }] : styles.screenFormWrap} pointerEvents="box-none">
+					<Animated.View style={isSheet ? [StyleSheet.absoluteFill, { transform: [{ translateY: sheetTranslateY }] }] : styles.screenFormCard} pointerEvents="box-none">
 					<KeyboardAvoidingView
-						style={presentation === 'screen' ? styles.screenFormWrap : [styles.modalContentWrap, { height: sheetMaxHeight, bottom: modalInsets.paddingBottom }]}
+						style={presentation === 'screen' ? styles.screenFormCard : [styles.modalContentWrap, { height: sheetMaxHeight, bottom: 0 }]}
 						behavior={Platform.OS === 'ios' ? 'padding' : presentation === 'screen' ? 'height' : undefined}
 					>
 						<View style={[styles.formCard, presentation === 'screen' ? styles.screenFormCard : { height: sheetMaxHeight }]}>
@@ -478,6 +512,8 @@ export default function ProductFormModal({ visible, presentation = 'modal', prod
 						)}
 						</View>
 					</KeyboardAvoidingView>
+					</Animated.View>
+					</View>
 				</View>
 			) : null}
 
@@ -544,6 +580,7 @@ const styles = StyleSheet.create({
 	modalOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end' },
 	backdrop: { position: 'absolute', left: 0, right: 0, backgroundColor: '#B5B7B9' },
 	modalContentWrap: { position: 'absolute', left: 0, right: 0, minHeight: 0, justifyContent: 'flex-end' },
+	sheetClip: { position: 'absolute', left: 0, right: 0, top: 0, overflow: 'hidden' },
 	formCard: { width: '100%', minHeight: 0, paddingTop: 0, flexDirection: 'column', borderTopLeftRadius: 28, borderTopRightRadius: 28, backgroundColor: '#F0F2F3', overflow: 'hidden' },
 	dragHandle: { alignSelf: 'center', width: 80, height: 5, marginTop: 20, marginBottom: 14, borderRadius: 3, backgroundColor: '#7A7A7A' },
 	formHeader: { minHeight: 46, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center' },

@@ -10,7 +10,7 @@ import {
 	View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useIsFocused } from '@react-navigation/native';
+import { useTabFocused } from '../Componentes/TabPagerContext';
 import Feather from '@expo/vector-icons/Feather';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import CircularIconButton from '../Componentes/CircularIconButton';
@@ -37,7 +37,7 @@ export default function AdminQrCode({ navigation }) {
 	});
 	const { height, width } = useWindowDimensions();
 	const insets = useSafeAreaInsets();
-	const isFocused = useIsFocused();
+	const isFocused = useTabFocused();
 	const [permission, requestPermission] = useCameraPermissions();
 	const [modoLeitura, setModoLeitura] = useState('qrcode');
 	const [flashAtivo, setFlashAtivo] = useState(false);
@@ -107,7 +107,7 @@ export default function AdminQrCode({ navigation }) {
 		return (
 			<View style={styles.permissionRoot}>
 				<View style={styles.permissionScreen}>
-					<StatusBar barStyle="light-content" backgroundColor={COLORS.green} />
+					{isFocused ? <StatusBar barStyle="light-content" backgroundColor={COLORS.green} /> : null}
 					<CircularIconButton
 						style={[styles.permissionBack, { top: insets.top + 12 }]}
 						icon={<Feather name="chevron-left" size={27} color={COLORS.white} />}
@@ -130,7 +130,7 @@ export default function AdminQrCode({ navigation }) {
 
 	return (
 		<View style={styles.container}>
-			<StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+			{isFocused ? <StatusBar barStyle="light-content" backgroundColor="transparent" translucent /> : null}
 			{isFocused && !cameraError ? (
 				<CameraView
 					key={cameraKey}

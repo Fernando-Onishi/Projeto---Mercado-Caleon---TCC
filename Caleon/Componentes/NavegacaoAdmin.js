@@ -4,6 +4,7 @@ import Octicons from '@expo/vector-icons/Octicons';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { ADMIN_THEME } from '../Config/AdminTheme';
 import { useProductModal } from './ProductModalContext';
+import { ADMIN_TAB_ROUTES, useTabPager, useTabPagerPage } from './TabPagerContext';
 import { useFonts } from 'expo-font';
 import {
 	Alert,
@@ -22,15 +23,29 @@ const tabs = [
 ];
 
 export default function NavegacaoAdmin({ navigation, activeTab, showAdd = true }) {
-	const { closeProductModal } = useProductModal();
+	const { openProductModal, closeProductModal, isProductModalOpen } = useProductModal();
+	const pager = useTabPager();
+	const pagerPage = useTabPagerPage();
 	useFonts({
 		LilitaOne_400Regular: require('@expo-google-fonts/lilita-one/400Regular/LilitaOne_400Regular.ttf'),
 	});
 
+	// Dentro do carrossel a barra é única e fica fixa por cima das páginas;
+	// cada página só reserva o espaço dela.
+	if (pagerPage) return <View style={styles.pagerSpacer} />;
+
 	function navigateTo(route, label, action) {
+		// "Adicionar" abre a folha "Criar Produto" por cima da tela atual, sem trocar de tela.
 		if (action === 'addProduct') {
+			if (isProductModalOpen) closeProductModal();
+			else openProductModal({});
+			return;
+		}
+
+		if (ADMIN_TAB_ROUTES.includes(route)) {
 			closeProductModal();
-			if (navigation.getState()?.routes?.[navigation.getState().index]?.name !== route) navigation.navigate(route);
+			if (pager) pager.goTo(route);
+			else navigation.navigate('AdminHome', { tab: route });
 			return;
 		}
 
@@ -49,7 +64,8 @@ export default function NavegacaoAdmin({ navigation, activeTab, showAdd = true }
 	return (
 		<View style={styles.bar}>
 			{tabs.filter((tab) => showAdd || tab.label !== 'Adicionar').map((tab) => {
-				const selected = activeTab === tab.label;
+				// Com o formulário de produto aberto, "Adicionar" fica destacado, como no protótipo.
+				const selected = isProductModalOpen ? tab.action === 'addProduct' : activeTab === tab.label;
 				const iconSize = tab.label === 'Início' ? 23 : 26;
 				const iconColor = selected ? '#FFFFFF' : '#757575';
 				return (
@@ -86,6 +102,9 @@ export default function NavegacaoAdmin({ navigation, activeTab, showAdd = true }
 }
 
 const styles = StyleSheet.create({
+	pagerSpacer: {
+		height: ADMIN_THEME.layout.bottomBarHeight,
+	},
 	bar: {
 		height: ADMIN_THEME.layout.bottomBarHeight,
 		paddingHorizontal: 3,

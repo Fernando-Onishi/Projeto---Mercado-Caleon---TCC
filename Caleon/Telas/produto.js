@@ -34,6 +34,7 @@ const categories = [
 	{ name: 'Congelados', icon: 'snowflake' },
 	{ name: 'Higiene', icon: 'hand-wash' },
 	{ name: 'Padaria', icon: 'bread-slice' },
+	{ name: 'Mercearia', icon: 'basket-outline' },
 	{ name: 'Limpeza', icon: 'spray-bottle' },
 ];
 

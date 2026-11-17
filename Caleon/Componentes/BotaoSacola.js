@@ -9,7 +9,7 @@ export default function BotaoSacola({ navigation, size = 50 }) {
 	return (
 		<TouchableOpacity
 			style={[styles.button, { width: size, height: size, borderRadius: size * 0.3 }]}
-			onPress={() => navigation?.navigate('TelaSacola')}
+			onPress={() => navigation?.navigate('TelaHome', { tab: 'TelaSacola' })}
 			activeOpacity={0.8}
 			accessibilityRole="button"
 			accessibilityLabel={`Abrir sacola, ${bagCount} ${bagCount === 1 ? 'item' : 'itens'}`}

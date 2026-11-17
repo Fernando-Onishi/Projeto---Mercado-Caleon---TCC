@@ -1,7 +1,7 @@
 import React from 'react';
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useFonts } from 'expo-font';
-import { StackActions } from '@react-navigation/native';
+import { CLIENT_TAB_ROUTES, openTab, useTabPager, useTabPagerPage } from './TabPagerContext';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import Octicons from '@expo/vector-icons/Octicons';
@@ -18,17 +18,22 @@ const tabs = [
 export default function NavegacaoInferior({ activeTab, navigation, onUnavailable }) {
   const bagCount = useSacolaCount();
 
+  const pager = useTabPager();
+  const pagerPage = useTabPagerPage();
+
   useFonts({
     LilitaOne_400Regular: require('@expo-google-fonts/lilita-one/400Regular/LilitaOne_400Regular.ttf'),
   });
 
+  // Dentro do carrossel a barra é única e fica fixa por cima das páginas;
+  // cada página só reserva o espaço dela.
+  if (pagerPage) return <View style={styles.pagerSpacer} />;
+
   function handlePress(tab) {
     if (tab.route) {
       if (tab.label !== activeTab) {
-        if (tab.label === 'Perfil') {
-          navigation.push(tab.route);
-        } else if (tab.label === 'Início') {
-          navigation.dispatch(StackActions.popTo(tab.route));
+        if (CLIENT_TAB_ROUTES.includes(tab.route)) {
+          openTab(navigation, pager, 'TelaHome', tab.route);
         } else {
           navigation.navigate(tab.route);
         }
@@ -95,6 +100,9 @@ export default function NavegacaoInferior({ activeTab, navigation, onUnavailable
 }
 
 const styles = StyleSheet.create({
+  pagerSpacer: {
+    height: 92,
+  },
   tabBar: {
     height: 92,
     borderTopWidth: 1,

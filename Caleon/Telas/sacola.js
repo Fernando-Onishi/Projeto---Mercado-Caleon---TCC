@@ -434,7 +434,11 @@ export default function TelaSacola({ navigation }) {
                 </View>
               </View>
 
-              <TouchableOpacity style={styles.finalizarBtn}>
+              <TouchableOpacity
+                style={styles.finalizarBtn}
+                onPress={() => navigation.navigate('TelaPagamento')}
+                accessibilityRole="button"
+              >
                 <Text style={styles.finalizarText}>Finalizar Compra</Text>
               </TouchableOpacity>
             </View>

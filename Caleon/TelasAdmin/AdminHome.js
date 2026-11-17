@@ -13,6 +13,17 @@ import { db } from '../Config/FireBaseConfig';
 import { ADMIN_THEME } from '../Config/AdminTheme';
 import AdminOrderBottomSheet from './AdminOrderBottomSheet';
 import { isLowStock, mapAdminProduct } from './adminProdutoUtils';
+import { formatCurrency as formatMoney } from '../Config/Produtos';
+import { STORE } from '../Config/Pagamento';
+import {
+  PAYMENT_LABELS,
+  PAYMENT_STATUS_LABELS,
+  formatTime,
+  subscribeToOpenOrders,
+  toDate,
+  updateOrderStatus,
+  updatePaymentStatus,
+} from '../Config/Pedidos';
 
 const C = ADMIN_THEME.colors;
 const CHART_PLOT_HEIGHT = 92;
@@ -57,26 +68,29 @@ function formatMetricValue(value, unit) {
   return unit ? `${formattedValue} ${unit}` : formattedValue;
 }
 
-const sampleOrders = [
-  {
-    id: 897,
-    customer: 'Christian Godoi',
-    status: 'Pendente',
-    total: 'R$ 7,50',
-    date: '15 de Agosto de 2026',
-    time: 'Hora: 10:15',
-    accent: 'pending',
-  },
-  {
-    id: 897,
-    customer: 'Christian Godoi',
-    status: 'Atrasado',
-    total: 'R$ 7,50',
-    date: '15 de Agosto de 2026',
-    time: 'Hora: 10:15',
-    accent: 'late',
-  },
-];
+const QUEUE_STATUS = {
+  recebido: { label: 'Novo', icon: 'clock' },
+  preparando: { label: 'Preparando', icon: 'package' },
+  pronto: { label: 'Pronto p/ retirada', icon: 'check-circle' },
+};
+
+// Atrasado: ainda não ficou pronto depois do prazo de retirada prometido ao cliente.
+function isLateOrder(order) {
+  if (order.status !== 'recebido' && order.status !== 'preparando') return false;
+  const createdAt = toDate(order.createdAt);
+  return Boolean(createdAt) && Date.now() - createdAt.getTime() > STORE.pickupMinutes * 60000;
+}
+
+// Formato que a folha de conferência entende.
+function toSheetOrder(order) {
+  return {
+    ...order,
+    number: order.number,
+    paymentMethod: `${PAYMENT_LABELS[order.paymentMethod] || ''} • ${PAYMENT_STATUS_LABELS[order.paymentStatus] || ''}`,
+    time: formatTime(order.createdAt),
+    receivedAt: order.createdAt,
+  };
+}
 
 function MetricChart({
   title,
@@ -289,6 +303,56 @@ export default function AdminHome({ navigation, userRole }) {
   const [notificationsVisible, setNotificationsVisible] = useState(false);
   const [lowStockCount, setLowStockCount] = useState(3);
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [orders, setOrders] = useState([]);
+  const [ordersError, setOrdersError] = useState(false);
+  // Memorizado para a conferência não zerar os itens marcados a cada atualização da fila.
+  const sheetOrder = useMemo(() => (selectedOrder ? toSheetOrder(selectedOrder) : null), [selectedOrder]);
+
+  // Fila de pedidos real: chega sozinha quando um cliente finaliza a compra.
+  useEffect(() => subscribeToOpenOrders((nextOrders) => {
+    setOrders(nextOrders);
+    setOrdersError(false);
+  }, (error) => {
+    console.error('Não foi possível carregar a fila de pedidos.', error);
+    setOrdersError(true);
+  }), []);
+
+  async function changeStatus(order, status) {
+    try {
+      await updateOrderStatus(order.id, status);
+    } catch (error) {
+      console.error('Não foi possível atualizar o pedido.', error);
+      Alert.alert('Pedido', 'Não foi possível atualizar o pedido. Confira sua conexão e tente novamente.');
+    }
+  }
+
+  function rejectOrder(order) {
+    Alert.alert('Recusar pedido', `Cancelar o pedido #${order.number} de ${order.customerName}?`, [
+      { text: 'Voltar', style: 'cancel' },
+      {
+        text: 'Cancelar pedido',
+        style: 'destructive',
+        onPress: async () => {
+          setSelectedOrder(null);
+          await changeStatus(order, 'cancelado');
+        },
+      },
+    ]);
+  }
+
+  async function acceptOrder(order) {
+    if (order.status === 'recebido') await changeStatus(order, 'preparando');
+    setSelectedOrder(order);
+  }
+
+  async function confirmPix(order) {
+    try {
+      await updatePaymentStatus(order.id, 'confirmado');
+    } catch (error) {
+      console.error('Não foi possível confirmar o Pix.', error);
+      Alert.alert('Pagamento', 'Não foi possível confirmar o pagamento.');
+    }
+  }
 
   useEffect(() => {
     const unsubscribe = onSnapshot(
@@ -356,7 +420,7 @@ export default function AdminHome({ navigation, userRole }) {
         navigation={navigation}
       />
       <AdminScreenLayout
-        headerHeight={82}
+        headerHeight={72}
         headerContent={(
           <View style={styles.topbar}>
             <TouchableOpacity
@@ -365,7 +429,7 @@ export default function AdminHome({ navigation, userRole }) {
               accessibilityRole="button"
               accessibilityLabel="Configurações da conta"
             >
-              <Feather name="user" size={20} color={C.white} />
+              <Feather name="user" size={22} color={C.white} />
             </TouchableOpacity>
 
             <View style={styles.brandCopy}>
@@ -375,9 +439,11 @@ export default function AdminHome({ navigation, userRole }) {
 
             <View style={styles.notificationButton}>
               <CircularIconButton
-                icon={<Feather name="bell" size={20} color={C.white} />}
+                size={ADMIN_THEME.layout.headerActionSize}
+                borderRadius={12}
+                icon={<Feather name="bell" size={22} color={C.white} />}
                 onPress={() => setNotificationsVisible(true)}
-                accessibilityLabel="Notificações"
+                accessibilityLabel={`Abrir notificações, ${lowStockCount} disponíveis`}
               />
               {lowStockCount > 0 ? (
                 <View style={styles.badge}>
@@ -514,70 +580,105 @@ export default function AdminHome({ navigation, userRole }) {
 
           <Text style={styles.sectionTitle}>Fila de Pedidos</Text>
 
-          {sampleOrders.map((order) => (
-            <View key={`${order.id}-${order.status}-${order.customer}`} style={styles.orderCard}>
-              <View style={styles.orderHeader}>
-                <View style={styles.avatar}>
-                  <Feather name="user" size={18} color="#8B9291" />
-                </View>
+          {orders.length === 0 ? (
+            <View style={styles.emptyQueue}>
+              <Feather name="inbox" size={28} color="#A3AAA7" />
+              <Text style={styles.emptyQueueText}>
+                {ordersError ? 'Não foi possível carregar os pedidos.' : 'Nenhum pedido na fila agora.'}
+              </Text>
+            </View>
+          ) : null}
 
-                <View style={styles.orderInfo}>
-                  <Text style={styles.orderId}>#{order.id}</Text>
-                  <Text style={styles.customerName}>{order.customer}</Text>
-                  <Text style={styles.orderMeta}>Data: {order.date}</Text>
-                  <Text style={styles.orderMeta}>Hora: {order.time}</Text>
-                </View>
+          {orders.map((order) => {
+            const late = isLateOrder(order);
+            const queueStatus = QUEUE_STATUS[order.status] || { label: order.status, icon: 'clock' };
+            const isReady = order.status === 'pronto';
+            const pixToConfirm = order.paymentMethod === 'pix' && order.paymentStatus !== 'confirmado';
+            const createdAt = toDate(order.createdAt);
+            return (
+              <View key={order.id} style={styles.orderCard}>
+                <View style={styles.orderHeader}>
+                  <View style={styles.avatar}>
+                    <Feather name="user" size={18} color="#8B9291" />
+                  </View>
 
-                <View style={styles.orderSummary}>
-                  <View
-                    style={[
-                      styles.statusBadge,
-                      order.accent === 'late' ? styles.statusLate : styles.statusPending,
-                    ]}
-                  >
-                    {order.accent === 'late' ? (
-                      <Feather name="alert-triangle" size={12} color={C.red} />
-                    ) : (
-                      <Feather name="clock" size={12} color="#D99A14" />
-                    )}
-                    <Text
-                      style={[
-                        styles.statusText,
-                        order.accent === 'late' ? styles.statusTextLate : styles.statusTextPending,
-                      ]}
-                    >
-                      {order.status}
+                  <View style={styles.orderInfo}>
+                    <Text style={styles.orderId}>#{order.number}</Text>
+                    <Text style={styles.customerName} numberOfLines={1}>{order.customerName}</Text>
+                    <Text style={styles.orderMeta}>
+                      Data: {createdAt ? createdAt.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' }) : '—'}
+                    </Text>
+                    <Text style={styles.orderMeta}>Hora: {formatTime(order.createdAt) || '—'}</Text>
+                    <Text style={styles.orderMeta}>
+                      {PAYMENT_LABELS[order.paymentMethod]}{order.cardLast4 ? ` final ${order.cardLast4}` : ''} • {PAYMENT_STATUS_LABELS[order.paymentStatus]}
                     </Text>
                   </View>
 
-                  <Text style={styles.orderPrice}>{order.total}</Text>
+                  <View style={styles.orderSummary}>
+                    <View style={[styles.statusBadge, late ? styles.statusLate : isReady ? styles.statusReady : styles.statusPending]}>
+                      <Feather name={late ? 'alert-triangle' : queueStatus.icon} size={12} color={late ? C.red : isReady ? C.success : '#D99A14'} />
+                      <Text style={[styles.statusText, late ? styles.statusTextLate : isReady ? styles.statusTextReady : styles.statusTextPending]}>
+                        {late ? 'Atrasado' : queueStatus.label}
+                      </Text>
+                    </View>
+
+                    <Text style={styles.orderPrice}>{formatMoney(Number(order.total) || 0)}</Text>
+                  </View>
+                </View>
+
+                {pixToConfirm ? (
+                  <TouchableOpacity style={styles.pixConfirm} onPress={() => confirmPix(order)} accessibilityRole="button">
+                    <Feather name="check-square" size={15} color={C.green} />
+                    <Text style={styles.pixConfirmText}>Confirmar Pix recebido</Text>
+                  </TouchableOpacity>
+                ) : null}
+
+                <View style={styles.orderActions}>
+                  {isReady ? (
+                    <TouchableOpacity
+                      style={[styles.actionButton, styles.acceptButton]}
+                      onPress={() => changeStatus(order, 'retirado')}
+                      accessibilityRole="button"
+                    >
+                      <Text style={styles.actionText}>Cliente retirou</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <>
+                      <TouchableOpacity
+                        style={[styles.actionButton, styles.rejectButton]}
+                        onPress={() => rejectOrder(order)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Recusar pedido ${order.number}`}
+                      >
+                        <Text style={styles.actionText}>Recusar</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.actionButton, styles.acceptButton]}
+                        onPress={() => acceptOrder(order)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Abrir pedido ${order.number} para conferência`}
+                      >
+                        <Text style={styles.actionText}>{order.status === 'recebido' ? 'Aceitar' : 'Separar'}</Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
                 </View>
               </View>
-
-              <View style={styles.orderActions}>
-                <TouchableOpacity style={[styles.actionButton, styles.rejectButton]}>
-                  <Text style={styles.actionText}>Recusar</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.actionButton, styles.acceptButton]}
-                  onPress={() => setSelectedOrder(order)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Abrir pedido ${order.id} para conferência`}
-                >
-                  <Text style={styles.actionText}>Aceitar</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ))}
+            );
+          })}
         </ScrollView>
       </AdminScreenLayout>
       <AdminOrderBottomSheet
-        order={selectedOrder}
+        order={sheetOrder}
         onClose={() => setSelectedOrder(null)}
-        onComplete={() => Alert.alert(
-          'Pedido não atualizado',
-          'A conferência foi concluída, mas o aplicativo ainda não possui uma fonte de pedidos conectada. Nenhuma alteração foi salva.',
-        )}
+        onCancelOrder={() => selectedOrder && rejectOrder(selectedOrder)}
+        onComplete={async () => {
+          const order = selectedOrder;
+          setSelectedOrder(null);
+          if (!order) return;
+          await changeStatus(order, 'pronto');
+          Alert.alert('Pedido pronto', `O cliente foi avisado que o pedido #${order.number} está pronto para retirada.`);
+        }}
       />
     </>
   );
@@ -585,17 +686,17 @@ export default function AdminHome({ navigation, userRole }) {
 
 const styles = StyleSheet.create({
   topbar: {
-    minHeight: 82,
+    minHeight: 72,
     paddingHorizontal: ADMIN_THEME.layout.contentPadding,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: C.green,
   },
   brandMark: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#7CCAB5',
+    width: ADMIN_THEME.layout.headerActionSize,
+    height: ADMIN_THEME.layout.headerActionSize,
+    borderRadius: 12,
+    backgroundColor: C.mint,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
@@ -607,34 +708,38 @@ const styles = StyleSheet.create({
   kicker: {
     fontFamily: ADMIN_THEME.fonts.bold,
     fontSize: 10,
-    color: '#BFECD8',
-    marginBottom: 2,
+    color: '#A8E8D1',
   },
   greeting: {
     color: C.white,
     fontFamily: ADMIN_THEME.fonts.bold,
-    fontSize: 20,
-    lineHeight: 24,
+    fontSize: 17,
+    marginTop: 2,
   },
   notificationButton: {
     position: 'relative',
-    marginLeft: 8,
+    marginLeft: 12,
   },
   badge: {
     position: 'absolute',
-    right: -4,
-    top: -4,
-    minWidth: 16,
-    height: 16,
+    top: -5,
+    right: -5,
+    minWidth: 20,
+    height: 20,
     paddingHorizontal: 4,
-    borderRadius: 8,
-    backgroundColor: '#FF3F4D',
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: C.green,
+    backgroundColor: C.red,
     alignItems: 'center',
     justifyContent: 'center',
+    zIndex: 2,
   },
   badgeText: {
-    color: '#FFFFFF',
-    fontSize: 8,
+    color: C.white,
+    fontSize: 9,
+    lineHeight: 12,
+    textAlign: 'center',
     fontFamily: ADMIN_THEME.fonts.bold,
   },
   screen: {
@@ -1018,6 +1123,41 @@ const styles = StyleSheet.create({
   statusLate: {
     backgroundColor: '#FFF0F0',
     borderColor: '#FF8A8D',
+  },
+  statusReady: {
+    backgroundColor: '#E8F7EF',
+    borderColor: '#7DE1C4',
+  },
+  statusTextReady: {
+    color: C.success,
+  },
+  emptyQueue: {
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 28,
+    borderRadius: 18,
+    backgroundColor: C.white,
+  },
+  emptyQueueText: {
+    color: C.muted,
+    fontFamily: ADMIN_THEME.fonts.medium,
+    fontSize: 13,
+  },
+  pixConfirm: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 10,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: C.green,
+  },
+  pixConfirmText: {
+    color: C.green,
+    fontFamily: ADMIN_THEME.fonts.bold,
+    fontSize: 13,
   },
   statusText: {
     fontFamily: ADMIN_THEME.fonts.bold,

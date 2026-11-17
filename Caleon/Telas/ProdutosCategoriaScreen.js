@@ -24,6 +24,7 @@ import {
 	formatCurrency,
 	formatProductUnit,
 	getProductPrice,
+	PRODUCTS,
 } from '../Config/Produtos';
 import {
 	addProductToCart,
@@ -95,6 +96,22 @@ function mapProduct(snapshot) {
 			? `${Math.round((1 - pricePerKg / product.originalPricePerKg) * 100)}% OFF`
 			: null,
 	};
+}
+
+function normalizeCategory(value) {
+	return String(value || '')
+		.normalize('NFD')
+		.replace(/[̀-ͯ]/g, '')
+		.replace(/[^a-zA-Z0-9]/g, '')
+		.toLocaleLowerCase('pt-BR');
+}
+
+// Produtos que já vêm no app (Config/Produtos.js), no mesmo formato dos que vêm do Firebase.
+function getLocalProducts(category) {
+	return PRODUCTS
+		.filter((product) => normalizeCategory(product.category) === normalizeCategory(category))
+		.map((product) => mapProduct({ id: product.id, data: () => ({ ...product, active: true }) }))
+		.filter(Boolean);
 }
 
 function getCategoryQueryValues(category) {
@@ -217,9 +234,10 @@ export default function ProdutosCategoriaScreen({ navigation, route }) {
 			return undefined;
 		}
 
-		setLoading(true);
+		const localProducts = getLocalProducts(category);
+		setLoading(localProducts.length === 0);
 		setLoadError(false);
-		setProducts([]);
+		setProducts(localProducts);
 		const productsQuery = query(
 			collection(db, 'products'),
 			where('category', 'in', getCategoryQueryValues(category)),
@@ -228,12 +246,19 @@ export default function ProdutosCategoriaScreen({ navigation, route }) {
 		return onSnapshot(
 			productsQuery,
 			(snapshot) => {
-				setProducts(snapshot.docs.map(mapProduct).filter(Boolean));
+				// O Firebase sobrescreve o produto local de mesmo id (edição pelo admin) ou o esconde (excluído).
+				const merged = new Map(localProducts.map((product) => [product.id, product]));
+				snapshot.docs.forEach((productDocument) => {
+					const mapped = mapProduct(productDocument);
+					if (mapped) merged.set(mapped.id, mapped);
+					else merged.delete(productDocument.id);
+				});
+				setProducts([...merged.values()]);
 				setLoading(false);
 			},
 			(error) => {
 				console.error(`Não foi possível carregar os produtos da categoria ${category}.`, error);
-				setLoadError(true);
+				setLoadError(localProducts.length === 0);
 				setLoading(false);
 			},
 		);

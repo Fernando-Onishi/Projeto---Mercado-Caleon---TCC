@@ -4,7 +4,15 @@ import { useFonts } from 'expo-font';
 import Feather from '@expo/vector-icons/Feather';
 import SafeAreaScreen from '../Componentes/SafeAreaScreen';
 import CircularIconButton from '../Componentes/CircularIconButton';
-import { carregarPedidos } from './Historicopedidos';
+import { auth } from '../Config/FireBaseConfig';
+import { formatCurrency } from '../Config/Produtos';
+import {
+	ORDER_STATUS_LABELS,
+	PAYMENT_LABELS,
+	PAYMENT_STATUS_LABELS,
+	formatDateTime,
+	subscribeToMyOrders,
+} from '../Config/Pedidos';
 
 const COLORS = {
 	green: '#1B4B3D',
@@ -26,23 +34,22 @@ export default function HistoricoPedidosScreen({ navigation }) {
 		Montserrat_700Bold: require('@expo-google-fonts/montserrat/700Bold/Montserrat_700Bold.ttf'),
 	});
 
+	// Pedidos reais do cliente no Firestore, atualizados em tempo real.
 	useEffect(() => {
-		let active = true;
-
-		async function loadOrders() {
-			try {
-				const history = await carregarPedidos();
-				if (active) setOrders(history);
-			} catch (error) {
-				console.error('Não foi possível carregar o histórico de pedidos.', error);
-				if (active) setLoadError(true);
-			} finally {
-				if (active) setLoading(false);
-			}
+		const user = auth.currentUser;
+		if (!user) {
+			setLoading(false);
+			return undefined;
 		}
-
-		loadOrders();
-		return () => { active = false; };
+		return subscribeToMyOrders(user.uid, (history) => {
+			setOrders(history);
+			setLoadError(false);
+			setLoading(false);
+		}, (error) => {
+			console.error('Não foi possível carregar o histórico de pedidos.', error);
+			setLoadError(true);
+			setLoading(false);
+		});
 	}, []);
 
 	if (!fontsLoaded) return null;
@@ -81,24 +88,32 @@ export default function HistoricoPedidosScreen({ navigation }) {
 						</View>
 					)}
 					renderItem={({ item }) => (
-						<View style={styles.orderCard}>
+						<TouchableOpacity
+							style={styles.orderCard}
+							onPress={() => navigation.navigate('TelaPedido', { orderId: item.id })}
+							activeOpacity={0.85}
+							accessibilityRole="button"
+							accessibilityLabel={`Acompanhar pedido ${item.number}`}
+						>
 							<View style={styles.orderHeader}>
 								<View>
-									<Text style={styles.orderNumber}>Pedido #{item.numero}</Text>
-									<Text style={styles.orderDate}>{item.dataHora}</Text>
+									<Text style={styles.orderNumber}>Pedido #{item.number}</Text>
+									<Text style={styles.orderDate}>{formatDateTime(item.createdAt)}</Text>
 								</View>
-								<Text style={styles.orderStatus}>{item.status}</Text>
-							</View>
-							<Text style={styles.products} numberOfLines={2}>
-								{item.produtos.map((product) => `${product.quantidade}x ${product.nome}`).join(' · ')}
-							</Text>
-							<View style={styles.orderFooter}>
-								<Text style={styles.payment}>{item.formaPagamento}</Text>
-								<Text style={styles.total}>
-									R$ {item.valorTotal.toFixed(2).replace('.', ',')}
+								<Text style={[styles.orderStatus, item.status === 'cancelado' && styles.orderStatusCancelled]}>
+									{ORDER_STATUS_LABELS[item.status] || item.status}
 								</Text>
 							</View>
-						</View>
+							<Text style={styles.products} numberOfLines={2}>
+								{(item.items || []).map((product) => `${product.quantidade}x ${product.nome}`).join(' · ')}
+							</Text>
+							<View style={styles.orderFooter}>
+								<Text style={styles.payment}>
+									{PAYMENT_LABELS[item.paymentMethod] || ''} • {PAYMENT_STATUS_LABELS[item.paymentStatus] || ''}
+								</Text>
+								<Text style={styles.total}>{formatCurrency(Number(item.total) || 0)}</Text>
+							</View>
+						</TouchableOpacity>
 					)}
 				/>
 			</View>
@@ -152,6 +167,7 @@ const styles = StyleSheet.create({
 	orderNumber: { color: COLORS.ink, fontFamily: 'Montserrat_700Bold', fontSize: 14 },
 	orderDate: { marginTop: 4, color: COLORS.muted, fontFamily: 'Montserrat_400Regular', fontSize: 11 },
 	orderStatus: { color: COLORS.green, fontFamily: 'Montserrat_700Bold', fontSize: 11 },
+	orderStatusCancelled: { color: '#FF383C' },
 	products: { marginTop: 14, color: COLORS.ink, fontFamily: 'Montserrat_400Regular', fontSize: 12, lineHeight: 18 },
 	orderFooter: {
 		marginTop: 14,

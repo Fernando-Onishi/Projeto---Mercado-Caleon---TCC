@@ -45,7 +45,7 @@ export default function AdminAdicionarProduto({ navigation, userRole }) {
 					<View style={styles.topbar}>
 						<TouchableOpacity
 							style={styles.brandMark}
-							onPress={() => navigation.navigate('AdminConfiguracoes')}
+							onPress={() => navigation.navigate('AdminHome', { tab: 'AdminConfiguracoes' })}
 							accessibilityRole="button"
 							accessibilityLabel="Configurações da conta"
 						>

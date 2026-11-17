@@ -115,6 +115,7 @@ const categories = [
 	'Congelados',
 	'Higiene',
 	'Padaria',
+	'Mercearia',
 	'Limpeza',
 ];
 
@@ -128,6 +129,7 @@ const filterOptions = [
 	{ name: 'Congelados', category: 'Congelados', icon: 'snowflake' },
 	{ name: 'Higiene', category: 'Higiene', icon: 'hand-wash' },
 	{ name: 'Padaria', category: 'Padaria', icon: 'bread-slice' },
+	{ name: 'Mercearia', category: 'Mercearia', icon: 'basket-outline' },
 	{ name: 'Preço', type: 'price', icon: 'sort-ascending' },
 ];
 
@@ -149,8 +151,13 @@ function formatCep(value) {
 	return digits.replace(/^(\d{5})(\d)/, '$1-$2');
 }
 
+// Alvos de toque mínimos recomendados para celular (Android 48dp / iOS 44pt).
+const MIN_TOUCH = 44;
+const MIN_HEART = 36;
+
 function ProductCard({ product, width, onOpen, onToggleCart, onToggleFavorite, isFavorite, isInCart }) {
 	const scale = width / 130;
+	const heartSize = Math.max(MIN_HEART, width * 0.17);
 
 	return (
 		<View style={[styles.productCard, {
@@ -174,30 +181,31 @@ function ProductCard({ product, width, onOpen, onToggleCart, onToggleFavorite, i
 					}]}>{product.discount}</Text> : null}
 					<TouchableOpacity
 						style={[styles.heartButton, isFavorite && styles.heartButtonActive, {
-							right: width * 0.06,
-							top: width * 0.06,
-							width: width * 0.15,
-							height: width * 0.15,
-							borderRadius: width * 0.075,
+							right: width * 0.05,
+							top: width * 0.05,
+							width: heartSize,
+							height: heartSize,
+							borderRadius: heartSize / 2,
 						}]}
+						hitSlop={6}
 						onPress={(event) => { event.stopPropagation(); onToggleFavorite(product.id); }}
 						accessibilityRole="button"
 						accessibilityLabel={`${isFavorite ? 'Remover' : 'Adicionar'} ${product.name} ${isFavorite ? 'dos' : 'aos'} favoritos`}
 					>
 						<MaterialCommunityIcons
 							name={isFavorite ? 'heart' : 'heart-outline'}
-							size={12 * scale}
+							size={heartSize * 0.55}
 							color={colors.white}
 						/>
 					</TouchableOpacity>
 				</View>
 				<Text style={[styles.productName, { fontSize: 12 * scale, marginTop: 6 * scale }]} numberOfLines={1}>
-					{product.name} <Text style={[styles.weight, { fontSize: 8 * scale }]}>{product.weight}</Text>
+					{product.name} <Text style={[styles.weight, { fontSize: 8.5 * scale }]}>{product.weight}</Text>
 				</Text>
 				<View style={[styles.priceRow, { marginTop: 1 * scale }]}>
 					<Text style={[styles.price, { fontSize: 18 * scale, marginTop: 0 }]}>{product.price}</Text>
 					{product.originalPrice ? (
-						<Text style={[styles.originalPrice, { fontSize: 8 * scale }]}>
+						<Text style={[styles.originalPrice, { fontSize: 8.5 * scale }]}>
 							{product.originalPrice}
 						</Text>
 					) : null}
@@ -205,17 +213,17 @@ function ProductCard({ product, width, onOpen, onToggleCart, onToggleFavorite, i
 			</TouchableOpacity>
 			<TouchableOpacity
 				style={[styles.addButton, isInCart && styles.addedButton, {
-					height: width * 0.16,
-					borderRadius: width * 0.06,
-					marginTop: width * 0.02,
+					height: Math.max(MIN_TOUCH, width * 0.2),
+					borderRadius: width * 0.07,
+					marginTop: width * 0.04,
 				}]}
 				activeOpacity={0.8}
 				onPress={() => onToggleCart(product, isInCart)}
 				accessibilityRole="button"
 				accessibilityLabel={`${product.name}, ${isInCart ? 'remover da' : 'adicionar à'} sacola`}
 			>
-				<MaterialCommunityIcons name={isInCart ? 'shopping' : 'shopping-outline'} size={11 * scale} color={colors.white} />
-				<Text style={[styles.addButtonText, { fontSize: 8.8 * scale }]}>
+				<MaterialCommunityIcons name={isInCart ? 'shopping' : 'shopping-outline'} size={12 * scale} color={colors.white} />
+				<Text style={[styles.addButtonText, { fontSize: 9 * scale }]} numberOfLines={1} adjustsFontSizeToFit>
 					{isInCart ? 'Adicionado' : 'Adicionar à sacola'}
 				</Text>
 			</TouchableOpacity>
@@ -451,7 +459,8 @@ const catalogStyles = StyleSheet.create({
 export default function Home({ navigation, route }) {
 	const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 	const insets = useSafeAreaInsets();
-	const productCardWidth = 160;
+	// Cards proporcionais à tela: cerca de 2 cards visíveis por vez (o pedaço do próximo indica que dá para rolar).
+	const productCardWidth = Math.round(Math.min(200, Math.max(165, (windowWidth - 36) / 2.05)));
 	const [fontsLoaded] = useFonts({
 		Lalezar_400Regular: require('@expo-google-fonts/lalezar/400Regular/Lalezar_400Regular.ttf'),
 		LilitaOne_400Regular: require('@expo-google-fonts/lilita-one/400Regular/LilitaOne_400Regular.ttf'),
@@ -891,9 +900,8 @@ export default function Home({ navigation, route }) {
 				contentContainerStyle={styles.screenScrollContent}
 				showsVerticalScrollIndicator={false}
 			>
-				<View style={[styles.header, {
-					paddingTop: insets.top > 0 ? insets.top + 8 : 16,
-				}]}>
+				{/* Mesma altura do cabeçalho do painel admin: barra de status + 72. */}
+				<View style={[styles.header, { paddingTop: insets.top }]}>
 					<TouchableOpacity
 						style={styles.locationIcon}
 						onPress={openCepEditor}
@@ -901,7 +909,7 @@ export default function Home({ navigation, route }) {
 						accessibilityRole="button"
 						accessibilityLabel="Editar endereço e CEP"
 					>
-						<Feather name="map-pin" size={30} color={colors.white} />
+						<Feather name="map-pin" size={22} color={colors.white} />
 					</TouchableOpacity>
 					<View style={styles.locationText}>
 						<Text style={styles.greeting} numberOfLines={1}>Olá, {userName}</Text>
@@ -912,7 +920,7 @@ export default function Home({ navigation, route }) {
 							</Text>
 						</TouchableOpacity>
 					</View>
-					<BotaoSacola navigation={navigation} />
+					<BotaoSacola navigation={navigation} size={40} />
 				</View>
 
 				<View style={styles.contentArea}>
@@ -1188,44 +1196,47 @@ const styles = StyleSheet.create({
 		borderTopLeftRadius: 28,
 	},
 	header: {
-		minHeight: 116,
-		backgroundColor: '#194B38',
+		backgroundColor: colors.green,
 		flexDirection: 'row',
 		alignItems: 'center',
-		paddingHorizontal: 18,
-		paddingBottom: 16,
+		paddingHorizontal: 16,
 	},
+	// O conteúdo do cabeçalho tem 72 de altura, igual ao do admin.
 	locationIcon: {
-		width: 46,
-		height: 46,
-		borderRadius: 14,
+		width: 40,
+		height: 40,
+		borderRadius: 12,
 		backgroundColor: '#40B190',
 		alignItems: 'center',
 		justifyContent: 'center',
+		marginVertical: 16,
 	},
 	locationText: {
 		flex: 1,
-		marginLeft: 10,
+		marginLeft: 12,
+		marginRight: 12,
+		height: 72,
+		justifyContent: 'center',
 	},
 	greeting: {
 		color: colors.white,
 		fontFamily: 'Montserrat_700Bold',
-		fontSize: 18,
-		lineHeight: 22,
+		fontSize: 17,
+		lineHeight: 21,
 	},
 	address: {
 		color: colors.white,
 		fontFamily: 'Montserrat_700Bold',
-		fontSize: 12,
-		lineHeight: 16,
-		marginTop: 2,
+		fontSize: 11,
+		lineHeight: 14,
+		marginTop: 1,
 	},
 	editCep: {
 		color: '#35D59A',
 		fontFamily: 'Montserrat_500Medium',
-		fontSize: 11,
-		lineHeight: 15,
-		marginTop: 2,
+		fontSize: 10,
+		lineHeight: 13,
+		marginTop: 1,
 	},
 	modalBackdrop: {
 		flex: 1,
@@ -1585,7 +1596,7 @@ const styles = StyleSheet.create({
 	},
 	productsRow: {
 		alignItems: 'flex-start',
-		gap: 8,
+		gap: 12,
 		paddingHorizontal: 18,
 		paddingBottom: 12,
 	},
