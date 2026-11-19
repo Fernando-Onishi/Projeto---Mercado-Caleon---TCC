@@ -1,0 +1,105 @@
+rules_version = '2';
+
+// Regras do Firestore para o app Caleon.
+// Como usar: Firebase Console > Firestore Database > Regras > colar este conteúdo > Publicar.
+//
+// Quem é quem (igual ao app, em src/utils/getRoleByEmail.js e getUserRole.js):
+//   admin:       e-mail @admin.caleon.com, users/{uid}.role == 'admin' ou convite em adminInvites/{email},
+//                desde que o e-mail não esteja em adminRevocations/{email} (removido pela tela Equipe)
+//   funcionário: e-mail @equipe.caleon.com ou users/{uid}.role == 'employee'
+//   cliente:     qualquer outra conta logada
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function email() {
+      return request.auth.token.email;
+    }
+
+    function userDoc() {
+      return /databases/$(database)/documents/users/$(request.auth.uid);
+    }
+
+    function storedRole() {
+      return exists(userDoc()) ? get(userDoc()).data.get('role', '') : '';
+    }
+
+    // Convite de administrador feito pela tela Equipe (adminInvites/{email}).
+    function invitedAdmin() {
+      return exists(/databases/$(database)/documents/adminInvites/$(email()));
+    }
+
+    // E-mail removido da administração pela tela Equipe (vale até para @admin.caleon.com).
+    function revokedAdmin() {
+      return exists(/databases/$(database)/documents/adminRevocations/$(email()));
+    }
+
+    function isAdmin() {
+      return signedIn() && !revokedAdmin()
+        && (email().matches('.*@admin[.]caleon[.]com$') || storedRole() == 'admin' || invitedAdmin());
+    }
+
+    function isStaff() {
+      return isAdmin() || (signedIn() && (email().matches('.*@equipe[.]caleon[.]com$') || storedRole() == 'employee'));
+    }
+
+    // Perfil: cada pessoa lê e grava o próprio documento (foto, etc.), mas não pode mudar o próprio papel.
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isStaff());
+      // No cadastro o app grava o papel calculado pelo e-mail; só é aceito se bater com o e-mail.
+      allow create: if signedIn() && request.auth.uid == uid
+        && (!('role' in request.resource.data)
+          || request.resource.data.role == 'client'
+          || (request.resource.data.role == 'admin' && email().matches('.*@admin[.]caleon[.]com$'))
+          || (request.resource.data.role == 'employee' && email().matches('.*@equipe[.]caleon[.]com$')));
+      allow update: if signedIn() && request.auth.uid == uid
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']);
+      allow write: if isAdmin();
+    }
+
+    // Convites de administrador: só admin cria/remove; a pessoa convidada pode ler o próprio convite.
+    match /adminInvites/{inviteEmail} {
+      allow read: if signedIn() && (isAdmin() || email() == inviteEmail);
+      allow write: if isAdmin();
+    }
+
+    // Removidos da administração: qualquer admin adiciona ou tira; a própria pessoa pode ler o seu.
+    match /adminRevocations/{revokedEmail} {
+      allow read: if signedIn() && (isAdmin() || email() == revokedEmail);
+      allow write: if isAdmin();
+    }
+
+    // Caixa de notificações compartilhada da equipe (lido/limpo vale para todos os admins e funcionários).
+    match /adminState/{docId} {
+      allow read, write: if isStaff();
+    }
+
+    // Catálogo e banners: todos podem ver; só o admin altera (o funcionário pode mudar o estoque).
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if isAdmin();
+      allow update: if isStaff()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stockCurrent', 'updatedAt']);
+    }
+
+    match /banners/{bannerId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Pedidos: o cliente cria e acompanha os próprios; admin e funcionário veem e atualizam todos.
+    match /orders/{orderId} {
+      allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
+      allow read: if signedIn() && (resource.data.userId == request.auth.uid || isStaff());
+      allow update: if isStaff()
+        || (signedIn()
+          && resource.data.userId == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['paymentStatus', 'updatedAt'])
+          && request.resource.data.paymentStatus == 'informado');
+    }
+  }
+}

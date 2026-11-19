@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "Caleon",
+    "slug": "Caleon",
+    "version": "1.0.0",
+    "icon": "./assets/icone-app.png",
+    "plugins": [
+      "expo-font",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Permitir que o Caleon use a câmera para ler códigos.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ]
+    ],
+    "android": {
+      "package": "com.caleon",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icone-foreground.png",
+        
+        "backgroundColor": "#013016"
+      }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "7c389d66-6109-4d7f-8fca-c2453e6baf58"
+      }
+    }
+  }
+}
