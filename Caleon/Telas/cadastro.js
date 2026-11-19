@@ -1,14 +1,14 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useFonts } from 'expo-font';
 import EvilIcons from '@expo/vector-icons/EvilIcons';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
+import Feather from '@expo/vector-icons/Feather';
 import Fontisto from '@expo/vector-icons/Fontisto';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useWindowDimensions } from 'react-native';
 import { auth, db } from '../Config/FireBaseConfig';
-import { CART_STORAGE_KEY } from '../Config/ProdutoStorage';
+import { writeCart } from '../Config/ProdutoStorage';
 import { getHomeRouteByRole } from '../src/utils/getUserRole';
 import { getRoleByEmail } from '../src/utils/getRoleByEmail';
 import SafeAreaScreen from '../Componentes/SafeAreaScreen';
@@ -16,8 +16,8 @@ import {
 	Alert,
 	Image,
 	ImageBackground,
+	Keyboard,
 	KeyboardAvoidingView,
-	Platform,
 	ScrollView,
 	StyleSheet,
 	Text,
@@ -25,27 +25,44 @@ import {
 	TouchableOpacity,
 	View,
 } from 'react-native';
+import { themedStyles, tc } from '../Config/Tema';
+import { showGlobalNotification } from '../Componentes/NotificacaoGlobal';
 
-function FormField({ fontAwesomeIcon, fontistoIcon, placeholder, value, onChangeText, errorMessage, ...inputProps }) {
+function FormField({ fontAwesomeIcon, fontistoIcon, placeholder, value, onChangeText, errorMessage, secureTextEntry, ...inputProps }) {
+	// Campo de senha: o olho alterna entre mostrar e esconder o que foi digitado.
+	const [showPassword, setShowPassword] = useState(false);
 	return (
 		<View style={styles.fieldWrapper}>
 			<View style={[styles.inputContainer, errorMessage && styles.inputError]}>
 				{fontAwesomeIcon ? (
-					<FontAwesome name={fontAwesomeIcon} size={18} color={errorMessage ? '#c62828' : '#1B4B3D'} style={styles.iconGlyph} accessibilityElementsHidden />
+					<FontAwesome name={fontAwesomeIcon} size={18} color={tc(errorMessage ? '#c62828' : '#1B4B3D')} style={styles.iconGlyph} accessibilityElementsHidden />
 				) : fontistoIcon === 'locked' ? (
-					<EvilIcons name="lock" size={26} color={errorMessage ? '#c62828' : '#1B4B3D'} style={styles.iconGlyph} accessibilityElementsHidden />
+					<EvilIcons name="lock" size={26} color={tc(errorMessage ? '#c62828' : '#1B4B3D')} style={styles.iconGlyph} accessibilityElementsHidden />
 				) : (
-					<Fontisto name={fontistoIcon} size={18} color={errorMessage ? '#c62828' : '#1B4B3D'} style={styles.iconGlyph} accessibilityElementsHidden />
+					<Fontisto name={fontistoIcon} size={18} color={tc(errorMessage ? '#c62828' : '#1B4B3D')} style={styles.iconGlyph} accessibilityElementsHidden />
 				)}
 				<TextInput
 					style={styles.input}
 					placeholder={placeholder}
-					placeholderTextColor="#858b89"
+					placeholderTextColor={tc('#858b89')}
 					value={value}
 					onChangeText={onChangeText}
 					accessibilityState={{ invalid: Boolean(errorMessage) }}
+					secureTextEntry={Boolean(secureTextEntry) && !showPassword}
+					{...(secureTextEntry ? { autoCapitalize: 'none', autoCorrect: false } : {})}
 					{...inputProps}
 				/>
+				{secureTextEntry ? (
+					<TouchableOpacity
+						style={styles.passwordToggle}
+						onPress={() => setShowPassword((visible) => !visible)}
+						accessibilityRole="button"
+						accessibilityLabel={showPassword ? 'Esconder senha' : 'Mostrar senha'}
+						hitSlop={8}
+					>
+						<Feather name={showPassword ? 'eye' : 'eye-off'} size={20} color={tc('#757575')} />
+					</TouchableOpacity>
+				) : null}
 			</View>
 			{errorMessage ? <Text style={styles.fieldError}>{errorMessage}</Text> : null}
 		</View>
@@ -53,6 +70,14 @@ function FormField({ fontAwesomeIcon, fontistoIcon, placeholder, value, onChange
 }
 
 export default function TelaCadastro({ navigation }) {
+	// Quando o teclado abre, rola até os campos para dar para ver o que está sendo digitado.
+	const scrollRef = useRef(null);
+	useEffect(() => {
+		const subscription = Keyboard.addListener('keyboardDidShow', () => {
+			setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
+		});
+		return () => subscription.remove();
+	}, []);
 	const { width: screenWidth, height: screenHeight } = useWindowDimensions();
 	const panelHorizontalPadding = screenWidth < 380 ? 20 : screenWidth >= 900 ? 32 : 24;
 	const contentMaxWidth = Math.min(screenWidth - panelHorizontalPadding * 2, 560);
@@ -100,7 +125,7 @@ export default function TelaCadastro({ navigation }) {
 			let userDocumentSaveFailed = false;
 			let cartResetFailed = false;
 			try {
-				await AsyncStorage.setItem(CART_STORAGE_KEY, JSON.stringify([]));
+				await writeCart([], { sync: false });
 			} catch (error) {
 				console.error('Não foi possível iniciar a sacola vazia.', error);
 				cartResetFailed = true;
@@ -111,13 +136,13 @@ export default function TelaCadastro({ navigation }) {
 				profileUpdateFailed = true;
 			}
 			try {
+				// O papel (cliente/admin/funcionário) vem do e-mail; o admin pode promover depois pela tela Equipe.
 				await setDoc(doc(db, 'users', credential.user.uid), {
 					uid: credential.user.uid,
 					nome: name.trim(),
 					email: normalizedEmail,
-					role,
 					createdAt: serverTimestamp(),
-				});
+				}, { merge: true });
 			} catch (error) {
 				console.error('Não foi possível salvar os dados da conta no Firestore.', error);
 				userDocumentSaveFailed = true;
@@ -128,7 +153,7 @@ export default function TelaCadastro({ navigation }) {
 				if (profileUpdateFailed) warnings.push('não foi possível salvar o nome no perfil');
 				if (userDocumentSaveFailed) warnings.push('não foi possível salvar os dados do perfil no Firestore');
 				if (cartResetFailed) warnings.push('não foi possível iniciar a sacola vazia');
-				Alert.alert('Cadastro concluído', `Sua conta foi criada, mas ${warnings.join(' e ')}.`);
+				showGlobalNotification(`Sua conta foi criada, mas ${warnings.join(' e ')}.`);
 			}
 		} catch (error) {
 			const messages = {
@@ -156,9 +181,11 @@ export default function TelaCadastro({ navigation }) {
 			<SafeAreaScreen style={styles.safeArea}>
 				<KeyboardAvoidingView
 					style={styles.keyboardArea}
-					behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+					// No Android (tela inteira, edge-to-edge) a tela não encolhe sozinha: abre espaço para o teclado.
+					behavior="padding"
 				>
 					<ScrollView
+						ref={scrollRef}
 						contentContainerStyle={styles.scrollContent}
 						keyboardShouldPersistTaps="handled"
 						showsVerticalScrollIndicator={false}
@@ -171,7 +198,7 @@ export default function TelaCadastro({ navigation }) {
 								accessibilityRole="button"
 								accessibilityLabel="Ajuda sobre o cadastro"
 							>
-								<Fontisto name="question" size={16} color="black" accessibilityElementsHidden />
+								<Fontisto name="question" size={16} color={tc('black')} accessibilityElementsHidden />
 							</TouchableOpacity>
 							<Image
 								source={require('../assets/logo.png')}
@@ -264,7 +291,7 @@ export default function TelaCadastro({ navigation }) {
 	);
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(StyleSheet.create({
 	background: {
 		flex: 1,
 		width: '100%',
@@ -336,7 +363,7 @@ const styles = StyleSheet.create({
 		alignItems: 'center',
 		paddingHorizontal: 13,
 		borderRadius: 11,
-		backgroundColor: '#f2f3f3',
+		backgroundColor: '#FFFFFF',
 		elevation: 2,
 	},
 	inputError: {
@@ -357,6 +384,13 @@ const styles = StyleSheet.create({
 		fontFamily: 'MontserratMedium',
 		fontSize: 12,
 		textAlign: 'center',
+	},
+	passwordToggle: {
+		width: 40,
+		height: 40,
+		marginRight: -8,
+		alignItems: 'center',
+		justifyContent: 'center',
 	},
 	iconGlyph: {
 		width: 24,
@@ -412,4 +446,4 @@ const styles = StyleSheet.create({
 		lineHeight: 15,
 		textAlign: 'center',
 	},
-});
+}));

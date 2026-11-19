@@ -1,6 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-	Alert,
 	Animated,
 	Image,
 	PanResponder,
@@ -11,17 +10,23 @@ import {
 	TouchableOpacity,
 	useWindowDimensions,
 	View,
+	DeviceEventEmitter,
 } from 'react-native';
 import { useFonts } from 'expo-font';
 import Feather from '@expo/vector-icons/Feather';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import NavegacaoInferior from '../Componentes/NavegacaoInferior';
 import { publishSacolaCount } from '../Componentes/useSacolaCount';
-import { formatCurrency, formatWeight, getProductPrice, PRODUCTS } from '../Config/Produtos';
-import { addProductToCart, getFavorites, toggleFavorite } from '../Config/ProdutoStorage';
+import { formatCurrency, formatProductUnit, getProductPrice, productImageFor, productName, PRODUCTS } from '../Config/Produtos';
+import { collection, onSnapshot } from 'firebase/firestore';
+import { db } from '../Config/FireBaseConfig';
+import { isCatalogSeeded } from '../Config/CatalogoFirebase';
+import { addProductToCart, FAVORITES_CHANGED_EVENT, getFavorites, toggleFavorite } from '../Config/ProdutoStorage';
 import { showGlobalNotification } from '../Componentes/NotificacaoGlobal';
 import SafeAreaScreen from '../Componentes/SafeAreaScreen';
 import CircularIconButton from '../Componentes/CircularIconButton';
+import BotaoNotificacoesCliente from '../Componentes/BotaoNotificacoesCliente';
+import { themedStyles, tc } from '../Config/Tema';
 
 const palette = {
 	green: '#1b4b3d',
@@ -32,6 +37,23 @@ const palette = {
 	white: '#ffffff',
 	red: '#ff2929',
 };
+
+// Produto do Firestore no formato que a lista de favoritos usa (vale também para os cadastrados pelo admin).
+function mapCatalogProduct(id, data) {
+	const pricePerKg = Number(data.pricePerKg);
+	const defaultWeightGrams = Number(data.defaultWeightGrams) || 1000;
+	if (data.active === false || !data.name || !Number.isFinite(pricePerKg) || pricePerKg <= 0) return null;
+	return {
+		...data,
+		id,
+		name: productName(data.name),
+		imageUrl: productImageFor(id, data.imageUrl, data.imageUrls),
+		pricePerKg,
+		originalPricePerKg: Number(data.originalPricePerKg) > pricePerKg ? Number(data.originalPricePerKg) : null,
+		defaultWeightGrams,
+		availableWeights: Array.isArray(data.availableWeights) && data.availableWeights.length ? data.availableWeights.map(Number) : [defaultWeightGrams],
+	};
+}
 
 function FavoriteRow({ item, width, onDelete, onAdd, onPress }) {
 	const translateX = useRef(new Animated.Value(0)).current;
@@ -72,10 +94,10 @@ function FavoriteRow({ item, width, onDelete, onAdd, onPress }) {
 		<View style={[styles.rowShadow, { width }]}>
 			<View style={styles.rowClip}>
 				<View style={styles.addAction}>
-					<MaterialCommunityIcons name="shopping-outline" size={38} color={palette.white} />
+					<MaterialCommunityIcons name="shopping-outline" size={38} color={tc(palette.white)} />
 				</View>
 				<View style={styles.deleteAction}>
-					<Feather name="trash-2" size={40} color={palette.white} />
+					<Feather name="trash-2" size={40} color={tc(palette.white)} />
 				</View>
 				<Animated.View
 					style={[styles.favoriteCard, { width: width + 2, transform: [{ translateX }] }]}
@@ -86,7 +108,7 @@ function FavoriteRow({ item, width, onDelete, onAdd, onPress }) {
 						<View style={styles.productDetails}>
 							<View style={styles.productTitleRow}>
 								<Text style={styles.productName} numberOfLines={1}>{item.name}</Text>
-								<Text style={styles.productWeight}>{formatWeight(weightGrams)}</Text>
+								<Text style={styles.productWeight}>{formatProductUnit(item, weightGrams)}</Text>
 							</View>
 							<View style={styles.productPriceRow}>
 								<Text style={styles.currentPrice}>{formatCurrency(currentPrice)}</Text>
@@ -95,7 +117,7 @@ function FavoriteRow({ item, width, onDelete, onAdd, onPress }) {
 								) : null}
 							</View>
 						</View>
-						<Feather name="chevron-right" size={24} color="#111111" />
+						<Feather name="chevron-right" size={24} color={tc('#111111')} />
 					</TouchableOpacity>
 				</Animated.View>
 			</View>
@@ -105,22 +127,41 @@ function FavoriteRow({ item, width, onDelete, onAdd, onPress }) {
 
 export default function Favoritos({ navigation }) {
 	const { width } = useWindowDimensions();
-	const [favorites, setFavorites] = useState([]);
+	const [favoriteIds, setFavoriteIds] = useState([]);
+	// Catálogo atual (Firebase): inclui produtos cadastrados pelo admin e preços/fotos atualizados.
+	const [catalog, setCatalog] = useState(PRODUCTS);
+	const favorites = useMemo(
+		() => favoriteIds.map((id) => catalog.find((product) => product.id === id)).filter(Boolean),
+		[favoriteIds, catalog],
+	);
 	const [fontsLoaded] = useFonts({
 		LuckiestGuy: require('@expo-google-fonts/luckiest-guy/400Regular/LuckiestGuy_400Regular.ttf'),
 		LilitaOne_400Regular: require('@expo-google-fonts/lilita-one/400Regular/LilitaOne_400Regular.ttf'),
 	});
+	useEffect(() => onSnapshot(collection(db, 'products'), (snapshot) => {
+		const merged = new Map(isCatalogSeeded(snapshot.docs) ? [] : PRODUCTS.map((product) => [product.id, product]));
+		snapshot.docs.forEach((item) => {
+			const mapped = mapCatalogProduct(item.id, item.data());
+			if (mapped) merged.set(item.id, mapped);
+			else merged.delete(item.id);
+		});
+		setCatalog([...merged.values()]);
+	}, (error) => console.error('Não foi possível carregar o catálogo dos favoritos.', error)), []);
+
 	useEffect(() => {
 		let active = true;
 		async function loadFavorites() {
 			const ids = await getFavorites();
-			if (active) setFavorites(PRODUCTS.filter((product) => ids.includes(product.id)));
+			if (active) setFavoriteIds(ids);
 		}
 		loadFavorites();
 		const unsubscribe = navigation.addListener('focus', loadFavorites);
+		// Favoritado/desfavoritado em outra tela ou em outro aparelho: a lista atualiza na hora.
+		const subscription = DeviceEventEmitter.addListener(FAVORITES_CHANGED_EVENT, loadFavorites);
 		return () => {
 			active = false;
 			unsubscribe();
+			subscription.remove();
 		};
 	}, [navigation]);
 
@@ -130,10 +171,10 @@ export default function Favoritos({ navigation }) {
 		try {
 			await toggleFavorite(id);
 			const removed = favorites.find((item) => item.id === id);
-			setFavorites((items) => items.filter((item) => item.id !== id));
+			setFavoriteIds((ids) => ids.filter((itemId) => itemId !== id));
 			if (removed) showGlobalNotification(`${removed.name} removido dos favoritos`);
 		} catch {
-			Alert.alert('Favoritos', 'Não foi possível remover este produto.');
+			showGlobalNotification('Não foi possível remover este produto.');
 		}
 	}
 
@@ -143,7 +184,7 @@ export default function Favoritos({ navigation }) {
 			publishSacolaCount(nextItems);
 			showGlobalNotification(`${item.name} adicionado à sacola`);
 		} catch {
-			Alert.alert('Sacola', 'Não foi possível adicionar o produto.');
+			showGlobalNotification('Não foi possível adicionar o produto.');
 		}
 	}
 
@@ -156,11 +197,14 @@ export default function Favoritos({ navigation }) {
 					<CircularIconButton
 						style={styles.roundButton}
 						borderRadius={12}
-						icon={<Feather name="chevron-left" size={27} color={palette.white} />}
+						icon={<Feather name="chevron-left" size={27} color={tc(palette.white)} />}
 						onPress={() => navigation.navigate('TelaHome')}
 						accessibilityLabel="Voltar"
 					/>
 					<Text style={styles.title}>Favoritos</Text>
+					<View style={styles.notificationButton}>
+						<BotaoNotificacoesCliente navigation={navigation} size={40} />
+					</View>
 				</View>
 
 				<ScrollView
@@ -170,7 +214,7 @@ export default function Favoritos({ navigation }) {
 				>
 					{favorites.length === 0 ? (
 						<View style={styles.emptyFavorites}>
-							<MaterialCommunityIcons name="heart-outline" size={60} color="#C9C9C9" />
+							<MaterialCommunityIcons name="heart-outline" size={60} color={tc('#C9C9C9')} />
 							<Text style={styles.emptyFavoritesText}>Sua lista de favoritos está vazia</Text>
 						</View>
 					) : (
@@ -192,7 +236,7 @@ export default function Favoritos({ navigation }) {
 	);
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(StyleSheet.create({
 	safeArea: {
 		flex: 1,
 		backgroundColor: palette.green,
@@ -213,6 +257,11 @@ const styles = StyleSheet.create({
 		height: 116,
 		alignItems: 'center',
 		paddingTop: 15,
+	},
+	notificationButton: {
+		position: 'absolute',
+		top: 15,
+		right: 16,
 	},
 	roundButton: {
 		position: 'absolute',
@@ -353,4 +402,4 @@ const styles = StyleSheet.create({
 		fontSize: 11,
 		textDecorationLine: 'line-through',
 	},
-});
+}));

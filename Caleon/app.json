@@ -3,7 +3,7 @@
     "name": "Caleon",
     "slug": "Caleon",
     "version": "1.0.0",
-    "icon": "./assets/logoRedimensionada1024x1024.png",
+    "icon": "./assets/icone-app.png",
     "plugins": [
       "expo-font",
       [
@@ -18,9 +18,9 @@
     "android": {
       "package": "com.caleon",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/logoRedimensionada1024x1024.png",
-        "backgroundImage": "./assets/fundoRedimensionado.png",
-        "backgroundColor": "#194B38"
+        "foregroundImage": "./assets/icone-foreground.png",
+        
+        "backgroundColor": "#013016"
       }
     },
     "extra": {

@@ -14,6 +14,7 @@ import { ADMIN_THEME } from '../Config/AdminTheme';
 import { db } from '../Config/FireBaseConfig';
 import { isExpiringSoon, isLowStock, isOutOfStock, mapAdminProduct } from './adminProdutoUtils';
 import { useAdminNotifications } from '../Componentes/AdminNotificationsContext';
+import { themedStyles, tc } from '../Config/Tema';
 
 const C = ADMIN_THEME.colors;
 
@@ -33,7 +34,7 @@ function IndicatorCard({ title, value, detail, subdetail, icon, color, onPress }
 				{title === 'Total de Produtos' || subdetail ? <Text style={styles.monthly}>{subdetail || detail}</Text> : null}
 			</View>
 			<View style={[styles.iconBox, { backgroundColor: color }]}>
-				<Feather name={icon} size={28} color={C.white} />
+				<Feather name={icon} size={28} color={tc(C.white)} />
 			</View>
 		</TouchableOpacity>
 	);
@@ -48,7 +49,7 @@ export default function ControleEstoque({ navigation, route, userRole }) {
 	const [products, setProducts] = useState([]);
 	const [loading, setLoading] = useState(true);
 	const [loadError, setLoadError] = useState(false);
-	const { notifications } = useAdminNotifications();
+	const { unreadCount } = useAdminNotifications();
 	const [notificationsVisible, setNotificationsVisible] = useState(Boolean(route?.params?.showNotifications));
 
 	useEffect(() => onSnapshot(collection(db, 'products'), (snapshot) => {
@@ -105,20 +106,20 @@ export default function ControleEstoque({ navigation, route, userRole }) {
 					<AdminHeaderActions
 						left={<CircularIconButton
 							style={styles.backButton}
-							icon={<Feather name="chevron-left" size={27} color={C.white} />}
+							icon={<Feather name="chevron-left" size={27} color={tc(C.white)} />}
 							onPress={() => navigation?.canGoBack() ? navigation.goBack() : navigation?.navigate('AdminHome')}
 							accessibilityLabel="Voltar"
 						/>}
 						right={<View style={styles.notificationButtonWrap}>
 							<CircularIconButton
 								style={styles.notificationButton}
-								icon={<Feather name="bell" size={22} color={C.white} />}
+								icon={<Feather name="bell" size={22} color={tc(C.white)} />}
 								onPress={() => setNotificationsVisible(true)}
-								accessibilityLabel={`Abrir notificações, ${notifications.length} disponíveis`}
+								accessibilityLabel={`Abrir notificações, ${unreadCount} disponíveis`}
 							/>
-							{notifications.length > 0 ? (
+							{unreadCount > 0 ? (
 								<View style={styles.notificationBadge}>
-									<Text style={styles.notificationBadgeText}>{notifications.length > 99 ? '99+' : notifications.length}</Text>
+									<Text style={styles.notificationBadgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
 								</View>
 							) : null}
 						</View>}
@@ -126,7 +127,7 @@ export default function ControleEstoque({ navigation, route, userRole }) {
 					<Text style={styles.title}>Controle de Estoque</Text>
 				</View>
 			<ScrollView style={styles.screen} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-				{loading ? <ActivityIndicator style={styles.loading} size="large" color={C.green} /> : null}
+				{loading ? <ActivityIndicator style={styles.loading} size="large" color={tc(C.green)} /> : null}
 				{!loading ? <View style={styles.cards}>
 					{indicators.map((indicator) => <IndicatorCard
 						key={indicator.title}
@@ -143,7 +144,7 @@ export default function ControleEstoque({ navigation, route, userRole }) {
 	);
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(StyleSheet.create({
 	backButton: { width: ADMIN_THEME.layout.headerActionSize, height: ADMIN_THEME.layout.headerActionSize, borderRadius: 12, backgroundColor: C.mint },
 	notificationButton: { width: ADMIN_THEME.layout.headerActionSize, height: ADMIN_THEME.layout.headerActionSize, borderRadius: 12, backgroundColor: C.mint },
 	notificationButtonWrap: { position: 'relative' },
@@ -165,4 +166,4 @@ const styles = StyleSheet.create({
 	detail: { color: '#252A28', fontFamily: ADMIN_THEME.fonts.medium, fontSize: 11 },
 	monthly: { color: C.success, fontFamily: ADMIN_THEME.fonts.medium, fontSize: 11, lineHeight: 15, marginTop: 2 },
 	iconBox: { width: 56, height: 56, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: 16 },
-});
+}));

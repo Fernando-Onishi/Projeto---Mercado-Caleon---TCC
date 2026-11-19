@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { ADMIN_THEME } from '../Config/AdminTheme';
+import { themedStyles } from '../Config/Tema';
 
 export default function AdminHeaderActions({ left, right }) {
 	return (
@@ -11,7 +12,7 @@ export default function AdminHeaderActions({ left, right }) {
 	);
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(StyleSheet.create({
 	row: {
 		width: '100%',
 		height: ADMIN_THEME.layout.headerActionSize,
@@ -25,4 +26,4 @@ const styles = StyleSheet.create({
 		alignItems: 'center',
 		gap: 8,
 	},
-});
+}));

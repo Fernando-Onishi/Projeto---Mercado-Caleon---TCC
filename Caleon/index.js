@@ -1,4 +1,6 @@
 import { registerRootComponent } from 'expo';
+// Faz os avisos (Alert.alert) aparecerem também na versão web.
+import './Config/alertWeb';
 
 import App from './App';
 

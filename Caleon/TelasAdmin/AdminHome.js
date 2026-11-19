@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useFonts } from 'expo-font';
 import {
-  Alert, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View,
+  ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View,
 } from 'react-native';
 import { collection, onSnapshot } from 'firebase/firestore';
 import AdminScreenLayout from '../Componentes/AdminScreenLayout';
 import AdminNotificationsModal from '../Componentes/AdminNotificationsModal';
+import { useAdminNotifications } from '../Componentes/AdminNotificationsContext';
 import CircularIconButton from '../Componentes/CircularIconButton';
 import Feather from '@expo/vector-icons/Feather';
 import NavegacaoAdmin from '../Componentes/NavegacaoAdmin';
@@ -14,30 +15,29 @@ import { ADMIN_THEME } from '../Config/AdminTheme';
 import AdminOrderBottomSheet from './AdminOrderBottomSheet';
 import { isLowStock, mapAdminProduct } from './adminProdutoUtils';
 import { formatCurrency as formatMoney } from '../Config/Produtos';
-import { STORE } from '../Config/Pagamento';
 import {
   PAYMENT_LABELS,
   PAYMENT_STATUS_LABELS,
   formatTime,
-  subscribeToOpenOrders,
+  subscribeToAllOrders,
   toDate,
   updateOrderStatus,
+  OPEN_STATUSES,
   updatePaymentStatus,
 } from '../Config/Pedidos';
+import { computeMonthMetrics, computePeriodMetrics, computeQueueStats, periodAxisLabels } from '../Config/MetricasPedidos';
+import { showGlobalNotification } from '../Componentes/NotificacaoGlobal';
+import ModalSobe from '../Componentes/ModalSobe';
+import FotoCliente from '../Componentes/FotoCliente';
+import { FotoMeuPerfil, useMeuPerfil } from '../Componentes/MeuPerfil';
+import { formatPickup, pickupDeadline } from '../Config/Retirada';
+import { themedStyles, tc } from '../Config/Tema';
 
 const C = ADMIN_THEME.colors;
 const CHART_PLOT_HEIGHT = 92;
 const CHART_AXIS_HEIGHT = 20;
 
-const WEEK_LABELS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
-const MONTH_LABELS = ['J', 'F', 'M', 'A', 'M', 'J', 'J'];
-
-function getPeriodLabels(period) {
-  if (period === 'Dia') return ['00', '04', '08', '12', '16', '20', '24'];
-  if (period === 'Semana') return WEEK_LABELS;
-  if (period === 'Ano') return ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
-  return MONTH_LABELS;
-}
+const PURCHASE_FILTERS = ['Nesse Mês', 'Último Mês', 'Há 2 meses', 'Há 3 meses'];
 
 function formatScaleValue(value) {
   return value.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
@@ -70,15 +70,16 @@ function formatMetricValue(value, unit) {
 
 const QUEUE_STATUS = {
   recebido: { label: 'Novo', icon: 'clock' },
+  aceito: { label: 'Aceito', icon: 'thumbs-up' },
   preparando: { label: 'Preparando', icon: 'package' },
   pronto: { label: 'Pronto p/ retirada', icon: 'check-circle' },
 };
 
-// Atrasado: ainda não ficou pronto depois do prazo de retirada prometido ao cliente.
+// Atrasado: ainda não ficou pronto e já passou do horário de retirada escolhido pelo cliente.
 function isLateOrder(order) {
-  if (order.status !== 'recebido' && order.status !== 'preparando') return false;
-  const createdAt = toDate(order.createdAt);
-  return Boolean(createdAt) && Date.now() - createdAt.getTime() > STORE.pickupMinutes * 60000;
+  if (!OPEN_STATUSES.includes(order.status)) return false;
+  const deadline = pickupDeadline(order);
+  return Boolean(deadline) && Date.now() > deadline.getTime();
 }
 
 // Formato que a folha de conferência entende.
@@ -292,6 +293,7 @@ function MetricCard({
 }
 
 export default function AdminHome({ navigation, userRole }) {
+	const meuPerfil = useMeuPerfil();
   const [fontsLoaded] = useFonts({
     LilitaOne_400Regular: require('@expo-google-fonts/lilita-one/400Regular/LilitaOne_400Regular.ttf'),
     Montserrat_400Regular: require('@expo-google-fonts/montserrat/400Regular/Montserrat_400Regular.ttf'),
@@ -301,56 +303,84 @@ export default function AdminHome({ navigation, userRole }) {
   const [period, setPeriod] = useState('Dia');
   const [purchasePeriod, setPurchasePeriod] = useState('Nesse Mês');
   const [notificationsVisible, setNotificationsVisible] = useState(false);
-  const [lowStockCount, setLowStockCount] = useState(3);
+  const [lowStockCount, setLowStockCount] = useState(0);
+  const { unreadCount } = useAdminNotifications();
   const [selectedOrder, setSelectedOrder] = useState(null);
-  const [orders, setOrders] = useState([]);
+  const [allOrders, setAllOrders] = useState([]);
   const [ordersError, setOrdersError] = useState(false);
+  const [rejectTarget, setRejectTarget] = useState(null);
+  const [now, setNow] = useState(() => new Date());
+  // Fila: só os pedidos em andamento.
+  const orders = useMemo(
+    () => allOrders.filter((order) => order.status !== 'retirado' && order.status !== 'cancelado'),
+    [allOrders],
+  );
   // Memorizado para a conferência não zerar os itens marcados a cada atualização da fila.
   const sheetOrder = useMemo(() => (selectedOrder ? toSheetOrder(selectedOrder) : null), [selectedOrder]);
 
-  // Fila de pedidos real: chega sozinha quando um cliente finaliza a compra.
-  useEffect(() => subscribeToOpenOrders((nextOrders) => {
-    setOrders(nextOrders);
+  // Pedidos reais em tempo real: alimentam a fila e os números (faturamento, pedidos, tempo de separação).
+  useEffect(() => subscribeToAllOrders((nextOrders) => {
+    setAllOrders(nextOrders);
     setOrdersError(false);
   }, (error) => {
     console.error('Não foi possível carregar a fila de pedidos.', error);
     setOrdersError(true);
   }), []);
 
+  // Atualiza o relógio a cada minuto para os números de "hoje" virarem o dia sozinhos.
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 60000);
+    return () => clearInterval(timer);
+  }, []);
+
+  function reportError(message, error) {
+    console.error(message, error);
+    // O Alert do sistema não aparece na versão web; o aviso global aparece em todas.
+    showGlobalNotification(message);
+  }
+
   async function changeStatus(order, status) {
     try {
       await updateOrderStatus(order.id, status);
+      // Cartão é pago na maquininha na retirada: ao retirar, o pagamento entra no faturamento.
+      if (status === 'retirado' && order.paymentStatus !== 'confirmado') {
+        await updatePaymentStatus(order.id, 'confirmado');
+      }
+      return true;
     } catch (error) {
-      console.error('Não foi possível atualizar o pedido.', error);
-      Alert.alert('Pedido', 'Não foi possível atualizar o pedido. Confira sua conexão e tente novamente.');
+      reportError('Não foi possível atualizar o pedido. Confira sua conexão e suas permissões.', error);
+      return false;
     }
   }
 
   function rejectOrder(order) {
-    Alert.alert('Recusar pedido', `Cancelar o pedido #${order.number} de ${order.customerName}?`, [
-      { text: 'Voltar', style: 'cancel' },
-      {
-        text: 'Cancelar pedido',
-        style: 'destructive',
-        onPress: async () => {
-          setSelectedOrder(null);
-          await changeStatus(order, 'cancelado');
-        },
-      },
-    ]);
+    setRejectTarget(order);
   }
 
+  async function confirmReject() {
+    const order = rejectTarget;
+    setRejectTarget(null);
+    setSelectedOrder(null);
+    if (!order) return;
+    if (await changeStatus(order, 'cancelado')) showGlobalNotification(`Pedido #${order.number} recusado`);
+  }
+
+  // "Aceitar" confirma o pedido para o cliente; "Separar" começa o preparo e abre a conferência.
   async function acceptOrder(order) {
-    if (order.status === 'recebido') await changeStatus(order, 'preparando');
+    if (order.status === 'recebido') {
+      if (await changeStatus(order, 'aceito')) showGlobalNotification(`Pedido #${order.number} aceito`);
+      return;
+    }
+    if (order.status === 'aceito') await changeStatus(order, 'preparando');
     setSelectedOrder(order);
   }
 
   async function confirmPix(order) {
     try {
       await updatePaymentStatus(order.id, 'confirmado');
+      showGlobalNotification(`Pix do pedido #${order.number} confirmado: ${formatMoney(Number(order.total) || 0)} no faturamento`);
     } catch (error) {
-      console.error('Não foi possível confirmar o Pix.', error);
-      Alert.alert('Pagamento', 'Não foi possível confirmar o pagamento.');
+      reportError('Não foi possível confirmar o Pix. Confira sua conexão e suas permissões.', error);
     }
   }
 
@@ -366,48 +396,18 @@ export default function AdminHome({ navigation, userRole }) {
       },
       (error) => {
         console.error('Não foi possível carregar o resumo de estoque do painel.', error);
-        setLowStockCount(3);
       },
     );
 
     return unsubscribe;
   }, []);
 
-  const metrics = useMemo(
-    () => ({
-      Dia: {
-        revenue: 'R$0,00',
-        orders: '00',
-        purchases: 'R$0,00',
-        expenses: '00',
-        avgTime: '00 min',
-      },
-      Semana: {
-        revenue: 'R$0,00',
-        orders: '00',
-        purchases: 'R$0,00',
-        expenses: '00',
-        avgTime: '00 min',
-      },
-      Mês: {
-        revenue: 'R$0,00',
-        orders: '00',
-        purchases: 'R$0,00',
-        expenses: '00',
-        avgTime: '00 min',
-      },
-      Ano: {
-        revenue: 'R$0,00',
-        orders: '00',
-        purchases: 'R$0,00',
-        expenses: '00',
-        avgTime: '00 min',
-      },
-    }),
-    [],
+  const currentMetrics = useMemo(() => computePeriodMetrics(allOrders, period, now), [allOrders, period, now]);
+  const monthMetrics = useMemo(
+    () => computeMonthMetrics(allOrders, Math.max(0, PURCHASE_FILTERS.indexOf(purchasePeriod)), now),
+    [allOrders, purchasePeriod, now],
   );
-
-  const currentMetrics = metrics[period];
+  const queueStats = useMemo(() => computeQueueStats(allOrders, now), [allOrders, now]);
 
   if (!fontsLoaded) return null;
 
@@ -429,25 +429,25 @@ export default function AdminHome({ navigation, userRole }) {
               accessibilityRole="button"
               accessibilityLabel="Configurações da conta"
             >
-              <Feather name="user" size={22} color={C.white} />
+              <FotoMeuPerfil photo={meuPerfil.photo} size={ADMIN_THEME.layout.headerActionSize} />
             </TouchableOpacity>
 
             <View style={styles.brandCopy}>
               <Text style={styles.kicker}>Painel Operacional</Text>
-              <Text style={styles.greeting}>Olá, Administrador</Text>
+              <Text style={styles.greeting} numberOfLines={1}>Olá, {meuPerfil.firstName || 'Administrador'}</Text>
             </View>
 
             <View style={styles.notificationButton}>
               <CircularIconButton
                 size={ADMIN_THEME.layout.headerActionSize}
                 borderRadius={12}
-                icon={<Feather name="bell" size={22} color={C.white} />}
+                icon={<Feather name="bell" size={22} color={tc(C.white)} />}
                 onPress={() => setNotificationsVisible(true)}
-                accessibilityLabel={`Abrir notificações, ${lowStockCount} disponíveis`}
+                accessibilityLabel={unreadCount ? `Abrir notificações, ${unreadCount} novas` : 'Abrir notificações'}
               />
-              {lowStockCount > 0 ? (
+              {unreadCount > 0 ? (
                 <View style={styles.badge}>
-                  <Text style={styles.badgeText}>{lowStockCount > 99 ? '99+' : lowStockCount}</Text>
+                  <Text style={styles.badgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
                 </View>
               ) : null}
             </View>
@@ -481,30 +481,33 @@ export default function AdminHome({ navigation, userRole }) {
           <MetricCard
             title="Faturamento"
             value={currentMetrics.revenue}
-            trend="00%"
-            trendType="positive"
+            trend={currentMetrics.revenueTrend}
+            trendType={currentMetrics.revenueTrendType}
             yLabels={['5000+', '3000', '1000', '0']}
-            xLabels={getPeriodLabels(period)}
+            xLabels={periodAxisLabels(period)}
             period={period}
             unit="R$"
-            indicatorLabel="vs ontem"
+            data={currentMetrics.revenueData}
+            formatValue={(value) => formatMoney(value)}
+            indicatorLabel={currentMetrics.compareLabel}
           />
 
           <MetricCard
             title="Pedidos"
             value={currentMetrics.orders}
-            trend="0%"
-            trendType="negative"
+            trend={currentMetrics.ordersTrend}
+            trendType={currentMetrics.ordersTrendType}
             yLabels={['100', '50', '10', '0']}
-            xLabels={getPeriodLabels(period)}
+            xLabels={periodAxisLabels(period)}
             period={period}
             unit="pedidos"
-            indicatorLabel="vs ontem"
+            data={currentMetrics.ordersData}
+            indicatorLabel={currentMetrics.compareLabel}
             valueColor={C.success}
           />
 
           <View style={styles.purchaseFilters}>
-            {['Nesse Mês', 'Último Mês', 'Há 2 meses', 'Há 3 meses'].map((item) => (
+            {PURCHASE_FILTERS.map((item) => (
               <TouchableOpacity
                 key={item}
                 onPress={() => setPurchasePeriod(item)}
@@ -517,61 +520,63 @@ export default function AdminHome({ navigation, userRole }) {
 
           <MetricCard
             title="Compras Realizadas"
-            value={currentMetrics.purchases}
-            trend="0%"
-            trendType="negative"
+            value={monthMetrics.sales}
+            trend={monthMetrics.salesTrend}
+            trendType={monthMetrics.salesTrendType}
             yLabels={['100', '50', '10', '0']}
-            xLabels={MONTH_LABELS}
+            xLabels={monthMetrics.axisLabels}
             period={purchasePeriod}
             unit="R$"
-            indicatorLabel="vs último mês"
+            data={monthMetrics.salesData}
+            formatValue={(value) => formatMoney(value)}
+            indicatorLabel="vs mês anterior"
           />
 
           <MetricCard
             title="Gastos Realizados"
-            value={currentMetrics.expenses}
-            trend="0%"
-            trendType="positive"
+            value="R$ 0,00"
+            trend="—"
             yLabels={['100', '50', '10', '0']}
-            xLabels={MONTH_LABELS}
+            xLabels={monthMetrics.axisLabels}
             period={purchasePeriod}
             unit="R$"
-            indicatorLabel="vs último mês"
+            indicatorLabel="sem gastos cadastrados"
           />
 
           <MetricCard
             title="Tempo médio de separação"
-            value={currentMetrics.avgTime}
-            trend="0%"
-            trendType="positive"
+            value={monthMetrics.avgPrep}
+            trend={monthMetrics.avgPrepTrend}
+            trendType={monthMetrics.avgPrepTrendType}
             yLabels={['100', '50', '10', '0']}
-            xLabels={MONTH_LABELS}
+            xLabels={monthMetrics.axisLabels}
             period={purchasePeriod}
             unit="min"
-            indicatorLabel="vs último mês"
+            data={monthMetrics.avgPrepData}
+            indicatorLabel="vs mês anterior"
             valueColor={C.success}
           />
 
           <View style={styles.statsRow}>
             <View style={styles.statCard}>
               <View style={[styles.statIcon, styles.pendingIcon]}>
-                <Feather name="clock" size={15} color="#E7A51A" />
+                <Feather name="clock" size={15} color={tc('#E7A51A')} />
               </View>
-              <Text style={[styles.statNumber, styles.pendingNumber]}>7</Text>
+              <Text style={[styles.statNumber, styles.pendingNumber]}>{queueStats.pending}</Text>
               <Text style={styles.statLabel}>Pedidos Pendentes</Text>
             </View>
 
             <View style={styles.statCard}>
               <View style={[styles.statIcon, styles.todayIcon]}>
-                <Feather name="package" size={15} color={C.mint} />
+                <Feather name="package" size={15} color={tc(C.mint)} />
               </View>
-              <Text style={styles.statNumber}>48</Text>
+              <Text style={styles.statNumber}>{queueStats.today}</Text>
               <Text style={styles.statLabel}>Pedidos Hoje</Text>
             </View>
 
             <TouchableOpacity style={styles.statCard} onPress={() => navigation.navigate('ControleEstoque')}>
               <View style={[styles.statIcon, styles.lowStockIcon]}>
-                <Feather name="alert-triangle" size={15} color={C.red} />
+                <Feather name="alert-triangle" size={15} color={tc(C.red)} />
               </View>
               <Text style={[styles.statNumber, styles.lowStockNumber]}>{lowStockCount}</Text>
               <Text style={styles.statLabel}>Estoque Baixo</Text>
@@ -582,7 +587,7 @@ export default function AdminHome({ navigation, userRole }) {
 
           {orders.length === 0 ? (
             <View style={styles.emptyQueue}>
-              <Feather name="inbox" size={28} color="#A3AAA7" />
+              <Feather name="inbox" size={28} color={tc('#A3AAA7')} />
               <Text style={styles.emptyQueueText}>
                 {ordersError ? 'Não foi possível carregar os pedidos.' : 'Nenhum pedido na fila agora.'}
               </Text>
@@ -598,9 +603,7 @@ export default function AdminHome({ navigation, userRole }) {
             return (
               <View key={order.id} style={styles.orderCard}>
                 <View style={styles.orderHeader}>
-                  <View style={styles.avatar}>
-                    <Feather name="user" size={18} color="#8B9291" />
-                  </View>
+                  <FotoCliente userId={order.userId} size={38} style={styles.avatar} />
 
                   <View style={styles.orderInfo}>
                     <Text style={styles.orderId}>#{order.number}</Text>
@@ -609,6 +612,9 @@ export default function AdminHome({ navigation, userRole }) {
                       Data: {createdAt ? createdAt.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' }) : '—'}
                     </Text>
                     <Text style={styles.orderMeta}>Hora: {formatTime(order.createdAt) || '—'}</Text>
+                    {order.pickupAt ? (
+                      <Text style={[styles.orderMeta, styles.orderPickup]}>Retirada: {formatPickup(order.pickupAt)}</Text>
+                    ) : null}
                     <Text style={styles.orderMeta}>
                       {PAYMENT_LABELS[order.paymentMethod]}{order.cardLast4 ? ` final ${order.cardLast4}` : ''} • {PAYMENT_STATUS_LABELS[order.paymentStatus]}
                     </Text>
@@ -616,7 +622,7 @@ export default function AdminHome({ navigation, userRole }) {
 
                   <View style={styles.orderSummary}>
                     <View style={[styles.statusBadge, late ? styles.statusLate : isReady ? styles.statusReady : styles.statusPending]}>
-                      <Feather name={late ? 'alert-triangle' : queueStatus.icon} size={12} color={late ? C.red : isReady ? C.success : '#D99A14'} />
+                      <Feather name={late ? 'alert-triangle' : queueStatus.icon} size={12} color={tc(late ? C.red : isReady ? C.success : '#D99A14')} />
                       <Text style={[styles.statusText, late ? styles.statusTextLate : isReady ? styles.statusTextReady : styles.statusTextPending]}>
                         {late ? 'Atrasado' : queueStatus.label}
                       </Text>
@@ -628,7 +634,7 @@ export default function AdminHome({ navigation, userRole }) {
 
                 {pixToConfirm ? (
                   <TouchableOpacity style={styles.pixConfirm} onPress={() => confirmPix(order)} accessibilityRole="button">
-                    <Feather name="check-square" size={15} color={C.green} />
+                    <Feather name="check-square" size={15} color={tc(C.green)} />
                     <Text style={styles.pixConfirmText}>Confirmar Pix recebido</Text>
                   </TouchableOpacity>
                 ) : null}
@@ -658,7 +664,7 @@ export default function AdminHome({ navigation, userRole }) {
                         accessibilityRole="button"
                         accessibilityLabel={`Abrir pedido ${order.number} para conferência`}
                       >
-                        <Text style={styles.actionText}>{order.status === 'recebido' ? 'Aceitar' : 'Separar'}</Text>
+                        <Text style={styles.actionText}>{order.status === 'recebido' ? 'Aceitar' : order.status === 'aceito' ? 'Preparar' : 'Separar'}</Text>
                       </TouchableOpacity>
                     </>
                   )}
@@ -668,6 +674,27 @@ export default function AdminHome({ navigation, userRole }) {
           })}
         </ScrollView>
       </AdminScreenLayout>
+      <ModalSobe visible={Boolean(rejectTarget)} onRequestClose={() => setRejectTarget(null)} backdropColor="rgba(0, 0, 0, 0.5)">
+        <View style={styles.rejectOverlay}>
+          <View style={styles.rejectDialog}>
+            <View style={styles.rejectIcon}>
+              <Feather name="x-circle" size={24} color={tc(C.red)} />
+            </View>
+            <Text style={styles.rejectTitle}>Recusar pedido</Text>
+            <Text style={styles.rejectMessage}>
+              {rejectTarget ? `Cancelar o pedido #${rejectTarget.number} de ${rejectTarget.customerName}? O cliente verá o pedido como cancelado.` : null}
+            </Text>
+            <View style={styles.rejectActions}>
+              <TouchableOpacity style={[styles.rejectButtonBase, styles.rejectBack]} onPress={() => setRejectTarget(null)} accessibilityRole="button">
+                <Text style={[styles.rejectButtonText, styles.rejectBackText]}>Voltar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.rejectButtonBase, styles.rejectConfirm]} onPress={confirmReject} accessibilityRole="button">
+                <Text style={styles.rejectButtonText}>Cancelar pedido</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </ModalSobe>
       <AdminOrderBottomSheet
         order={sheetOrder}
         onClose={() => setSelectedOrder(null)}
@@ -676,15 +703,16 @@ export default function AdminHome({ navigation, userRole }) {
           const order = selectedOrder;
           setSelectedOrder(null);
           if (!order) return;
-          await changeStatus(order, 'pronto');
-          Alert.alert('Pedido pronto', `O cliente foi avisado que o pedido #${order.number} está pronto para retirada.`);
+          if (await changeStatus(order, 'pronto')) {
+            showGlobalNotification(`Pedido #${order.number} pronto: o cliente já vê no acompanhamento`);
+          }
         }}
       />
     </>
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(StyleSheet.create({
   topbar: {
     minHeight: 72,
     paddingHorizontal: ADMIN_THEME.layout.contentPadding,
@@ -1098,6 +1126,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginBottom: 4,
   },
+  orderPickup: { color: C.green, fontFamily: 'Montserrat_700Bold' },
   orderMeta: {
     color: '#6F7D78',
     fontFamily: ADMIN_THEME.fonts.body,
@@ -1124,6 +1153,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF0F0',
     borderColor: '#FF8A8D',
   },
+  rejectOverlay: { flex: 1, padding: 24, alignItems: 'center', justifyContent: 'center' },
+  rejectDialog: { width: '100%', maxWidth: 380, padding: 22, borderRadius: 22, backgroundColor: C.white },
+  rejectIcon: { width: 48, height: 48, borderRadius: 14, backgroundColor: '#FFF0F0', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  rejectTitle: { color: C.ink, fontFamily: ADMIN_THEME.fonts.display, fontSize: 24 },
+  rejectMessage: { marginTop: 6, color: C.muted, fontFamily: ADMIN_THEME.fonts.body, fontSize: 14, lineHeight: 20 },
+  rejectActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 20 },
+  rejectButtonBase: { minHeight: 44, paddingHorizontal: 16, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  rejectBack: { backgroundColor: C.background, borderWidth: 1, borderColor: '#DDE5E1' },
+  rejectBackText: { color: C.ink },
+  rejectConfirm: { backgroundColor: C.red },
+  rejectButtonText: { color: C.white, fontFamily: ADMIN_THEME.fonts.bold, fontSize: 14 },
   statusReady: {
     backgroundColor: '#E8F7EF',
     borderColor: '#7DE1C4',
@@ -1199,4 +1239,4 @@ const styles = StyleSheet.create({
     fontFamily: ADMIN_THEME.fonts.bold,
     fontSize: 13,
   },
-});
+}));

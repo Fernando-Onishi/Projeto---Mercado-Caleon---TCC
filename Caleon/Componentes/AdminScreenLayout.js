@@ -2,6 +2,7 @@ import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import SafeAreaScreen from './SafeAreaScreen';
 import { ADMIN_THEME } from '../Config/AdminTheme';
+import { themedStyles } from '../Config/Tema';
 
 export default function AdminScreenLayout({
 	children,
@@ -13,7 +14,7 @@ export default function AdminScreenLayout({
 	contentStyle,
 }) {
 	return (
-		<SafeAreaScreen style={[styles.container, style]} edges={edges}>
+		<SafeAreaScreen style={[styles.container, style]} edges={edges} bottomColor={footerContent ? '#FFFFFF' : ADMIN_THEME.colors.background}>
 			<View style={[styles.topHeaderSpace, { height: headerHeight }]}>
 				{headerContent}
 			</View>
@@ -25,7 +26,7 @@ export default function AdminScreenLayout({
 	);
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(StyleSheet.create({
 	container: {
 		flex: 1,
 		width: '100%',
@@ -46,4 +47,4 @@ const styles = StyleSheet.create({
 		paddingBottom: 16,
 		overflow: 'hidden',
 	},
-});
+}));

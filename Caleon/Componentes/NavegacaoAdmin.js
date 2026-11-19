@@ -13,6 +13,7 @@ import {
 	TouchableOpacity,
 	View,
 } from 'react-native';
+import { themedStyles, tc } from '../Config/Tema';
 
 const tabs = [
 	{ label: 'Início', icon: 'home', activeIcon: 'home-fill', route: 'AdminHome' },
@@ -77,15 +78,17 @@ export default function NavegacaoAdmin({ navigation, activeTab, showAdd = true }
 						accessibilityState={{ selected }}
 						accessibilityLabel={tab.label}
 					>
-						<View style={[styles.iconBox, selected && styles.menuIconSelected]}>
+						<View style={styles.iconBox}>
+							{/* Fundo verde como peça própria: no Android o arredondamento some quando a cor muda depois. */}
+							{selected ? <View style={styles.selectedBg} pointerEvents="none" /> : null}
 							{tab.label === 'QR Code' ? (
-								<Feather name="maximize" size={iconSize} color={iconColor} />
+								<Feather name="maximize" size={iconSize} color={tc(iconColor)} />
 							) : tab.label === 'Início' ? (
-								<Octicons name={selected ? tab.activeIcon : tab.icon} size={iconSize} color={iconColor} />
+								<Octicons name={selected ? tab.activeIcon : tab.icon} size={iconSize} color={tc(iconColor)} />
 							) : tab.label === 'Catálogo' ? (
-								<MaterialCommunityIcons name={selected ? tab.activeIcon : tab.icon} size={iconSize} color={iconColor} />
+								<MaterialCommunityIcons name={selected ? tab.activeIcon : tab.icon} size={iconSize} color={tc(iconColor)} />
 							) : (
-								<Feather name={tab.icon} size={iconSize} color={iconColor} />
+								<Feather name={tab.icon} size={iconSize} color={tc(iconColor)} />
 							)}
 						</View>
 						<Text style={[
@@ -101,7 +104,7 @@ export default function NavegacaoAdmin({ navigation, activeTab, showAdd = true }
 	);
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(StyleSheet.create({
 	pagerSpacer: {
 		height: ADMIN_THEME.layout.bottomBarHeight,
 	},
@@ -136,6 +139,11 @@ const styles = StyleSheet.create({
 		height: 46,
 		borderRadius: 12,
 	},
+	selectedBg: {
+		...StyleSheet.absoluteFillObject,
+		borderRadius: 12,
+		backgroundColor: '#1B4B3D',
+	},
 	menuIconSelected: {
 		backgroundColor: '#1B4B3D',
 	},
@@ -155,4 +163,4 @@ const styles = StyleSheet.create({
 		color: '#1B4B3D',
 		fontFamily: ADMIN_THEME.fonts.bold,
 	},
-});
+}));

@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-	Alert,
 	Image,
 	ScrollView,
 	StatusBar,
@@ -8,6 +7,7 @@ import {
 	Text,
 	TouchableOpacity,
 	View,
+	DeviceEventEmitter,
 } from 'react-native';
 import SafeAreaScreen from '../Componentes/SafeAreaScreen';
 import { useFonts } from 'expo-font';
@@ -15,13 +15,16 @@ import Feather from '@expo/vector-icons/Feather';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import NavegacaoInferior from '../Componentes/NavegacaoInferior';
 import { publishSacolaCount } from '../Componentes/useSacolaCount';
-import BotaoSacola from '../Componentes/BotaoSacola';
+import BotaoNotificacoesCliente from '../Componentes/BotaoNotificacoesCliente';
+import LinkVerMais from '../Componentes/LinkVerMais';
 import CircularIconButton from '../Componentes/CircularIconButton';
-import { formatCurrency, formatProductUnit, formatWeight, getProductById, getProductPrice, PRODUCTS } from '../Config/Produtos';
-import { addProductToCart, getFavorites, toggleFavorite } from '../Config/ProdutoStorage';
+import { formatCurrency, formatProductUnit, getProductById, getProductPrice, productImageFor, productName, PRODUCTS } from '../Config/Produtos';
+import { addProductToCart, FAVORITES_CHANGED_EVENT, getFavorites, toggleFavorite } from '../Config/ProdutoStorage';
 import { showGlobalNotification } from '../Componentes/NotificacaoGlobal';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
+import { isCatalogSeeded } from '../Config/CatalogoFirebase';
 import { db } from '../Config/FireBaseConfig';
+import { themedStyles, tc } from '../Config/Tema';
 
 const COLORS = {
 	dark: '#1B4B3D',
@@ -36,6 +39,30 @@ const COLORS = {
 
 const BASE_WEIGHTS = [300, 600, 1000, 1500];
 const EXTRA_WEIGHTS = [2000, 2500, 3000];
+// Carnes por peso: mais variedade (de 100 g a 5 kg); as mais pedidas aparecem primeiro.
+const MEAT_MAIN_WEIGHTS = [250, 500, 1000, 2000];
+const MEAT_EXTRA_WEIGHTS = [100, 200, 300, 400, 600, 750, 1500, 2500, 3000, 4000, 5000];
+
+// Converte um documento do Firestore no formato usado pela tela; null se o produto estiver inativo ou incompleto.
+function mapStoredDetailProduct(id, data) {
+	const defaultWeightGrams = Number(data.defaultWeightGrams);
+	const pricePerKg = Number(data.pricePerKg);
+	if (data.active !== true || !data.name || !(defaultWeightGrams > 0) || !(pricePerKg > 0)) return null;
+	return {
+		...data,
+		id,
+		name: productName(data.name),
+		imageUrl: productImageFor(id, data.imageUrl, data.imageUrls),
+		category: data.category === 'Horti-Fruti' ? 'HortiFruti' : data.category,
+		defaultWeightGrams,
+		pricePerKg,
+		originalPricePerKg: Number(data.originalPricePerKg) > pricePerKg ? Number(data.originalPricePerKg) : null,
+		averageWeightGrams: Number(data.averageWeightGrams) || defaultWeightGrams,
+		availableWeights: Array.isArray(data.availableWeights) && data.availableWeights.length
+			? data.availableWeights.map(Number).filter((weight) => Number.isFinite(weight) && weight > 0)
+			: [defaultWeightGrams],
+	};
+}
 
 function calculateDiscount(product) {
 	if (!product.originalPricePerKg || product.originalPricePerKg <= product.pricePerKg) return null;
@@ -85,7 +112,7 @@ function SimilarProductCard({ product, onPress, onFavorite, onAdd, isFavorite })
 				accessibilityRole="button"
 				accessibilityLabel={`${isFavorite ? 'Remover' : 'Adicionar'} ${product.name} ${isFavorite ? 'dos' : 'aos'} favoritos`}
 			>
-				<MaterialCommunityIcons name={isFavorite ? "heart" : "heart-outline"} size={17} color={COLORS.white} />
+				<MaterialCommunityIcons name={isFavorite ? "heart" : "heart-outline"} size={17} color={tc(COLORS.white)} />
 			</TouchableOpacity>
 			<TouchableOpacity
 				style={styles.similarAdd}
@@ -93,7 +120,7 @@ function SimilarProductCard({ product, onPress, onFavorite, onAdd, isFavorite })
 				accessibilityRole="button"
 				accessibilityLabel={`Adicionar ${product.name} à sacola`}
 			>
-				<Feather name="plus" size={20} color={COLORS.white} />
+				<Feather name="plus" size={20} color={tc(COLORS.white)} />
 			</TouchableOpacity>
 		</View>
 	);
@@ -101,10 +128,14 @@ function SimilarProductCard({ product, onPress, onFavorite, onAdd, isFavorite })
 
 export default function DetalheProduto({ navigation, route }) {
 	const productId = String(route?.params?.productId || '');
+	// O produto vem sempre do Firestore (sincronizado entre aparelhos); o catálogo do app só aparece
+	// enquanto o Firebase responde ou se o produto ainda não foi enviado para lá.
+	const localProduct = getProductById(productId);
 	const [storedProduct, setStoredProduct] = useState(null);
 	const [storedProductReady, setStoredProductReady] = useState(false);
-	const isStoredProduct = Boolean(productId && !getProductById(productId));
-	const product = storedProduct || getProductById(productId) || PRODUCTS[0];
+	const [storedSimilar, setStoredSimilar] = useState(null);
+	const [removed, setRemoved] = useState(false);
+	const product = storedProduct || localProduct || PRODUCTS[0];
 	const [fontsLoaded] = useFonts({
 		LilitaOne_400Regular: require('@expo-google-fonts/lilita-one/400Regular/LilitaOne_400Regular.ttf'),
 		Montserrat_400Regular: require('@expo-google-fonts/montserrat/400Regular/Montserrat_400Regular.ttf'),
@@ -113,16 +144,24 @@ export default function DetalheProduto({ navigation, route }) {
 	});
 	const [selectedWeight, setSelectedWeight] = useState(product.defaultWeightGrams);
 	const [favoriteIds, setFavoriteIds] = useState([]);
+
+	// Favoritos/sacola mudaram em outra tela ou em outro aparelho: coração e sacola atualizam na hora.
+	useEffect(() => {
+		const favoritesSubscription = DeviceEventEmitter.addListener(FAVORITES_CHANGED_EVENT, (ids) => setFavoriteIds(ids));
+		return () => {
+			favoritesSubscription.remove();
+		};
+	}, []);
 	const [showMoreWeights, setShowMoreWeights] = useState(false);
 	const total = getProductPrice(product, selectedWeight);
 	const discount = calculateDiscount(product);
 	const similarProducts = useMemo(
-		() => PRODUCTS.filter((item) => item.id !== product.id && item.category === product.category),
-		[product.id, product.category],
+		() => (storedSimilar || PRODUCTS).filter((item) => item.id !== product.id && item.category === product.category),
+		[storedSimilar, product.id, product.category],
 	);
 
 	useEffect(() => {
-		if (!productId || getProductById(productId)) {
+		if (!productId) {
 			setStoredProduct(null);
 			setStoredProductReady(true);
 			return undefined;
@@ -130,29 +169,8 @@ export default function DetalheProduto({ navigation, route }) {
 		setStoredProduct(null);
 		setStoredProductReady(false);
 		return onSnapshot(doc(db, 'products', productId), (snapshot) => {
-			if (!snapshot.exists()) {
-				setStoredProduct(null);
-				setStoredProductReady(true);
-				return;
-			}
-			const data = snapshot.data();
-			const defaultWeightGrams = Number(data.defaultWeightGrams);
-			const pricePerKg = Number(data.pricePerKg);
-			if (data.active !== true || !data.name || defaultWeightGrams <= 0 || pricePerKg <= 0) {
-				setStoredProduct(null);
-				setStoredProductReady(true);
-				return;
-			}
-			setStoredProduct({
-				...data,
-				id: snapshot.id,
-				defaultWeightGrams,
-				pricePerKg,
-				originalPricePerKg: Number(data.originalPricePerKg) > pricePerKg ? Number(data.originalPricePerKg) : null,
-				availableWeights: Array.isArray(data.availableWeights) && data.availableWeights.length
-					? data.availableWeights.map(Number).filter((weight) => Number.isFinite(weight) && weight > 0)
-					: [defaultWeightGrams],
-			});
+			setStoredProduct(snapshot.exists() ? mapStoredDetailProduct(snapshot.id, snapshot.data()) : null);
+			setRemoved(snapshot.exists() && !mapStoredDetailProduct(snapshot.id, snapshot.data()));
 			setStoredProductReady(true);
 		}, (error) => {
 			console.error('Não foi possível carregar o produto cadastrado.', error);
@@ -160,9 +178,29 @@ export default function DetalheProduto({ navigation, route }) {
 		});
 	}, [productId]);
 
+	// Produtos semelhantes da mesma categoria, também do Firestore.
 	useEffect(() => {
-		setSelectedWeight(product.defaultWeightGrams);
-	}, [product.id, product.defaultWeightGrams]);
+		if (!product.category) return undefined;
+		return onSnapshot(query(collection(db, 'products'), where('category', '==', product.category)), (snapshot) => {
+			if (!isCatalogSeeded(snapshot.docs)) {
+				const merged = new Map(PRODUCTS.map((item) => [item.id, item]));
+				snapshot.docs.forEach((item) => {
+					const mapped = mapStoredDetailProduct(item.id, item.data());
+					if (mapped) merged.set(mapped.id, mapped);
+					else merged.delete(item.id);
+				});
+				setStoredSimilar([...merged.values()]);
+				return;
+			}
+			setStoredSimilar(snapshot.docs.map((item) => mapStoredDetailProduct(item.id, item.data())).filter(Boolean));
+		}, (error) => console.error('Não foi possível carregar produtos semelhantes.', error));
+	}, [product.category]);
+
+	useEffect(() => {
+		// Carne por peso: começa num peso que aparece entre os botões principais.
+		const meatByWeight = product.category === 'Carnes' && (!product.unitBase || product.unitBase === 'g');
+		setSelectedWeight(meatByWeight && !MEAT_MAIN_WEIGHTS.includes(product.defaultWeightGrams) ? 500 : product.defaultWeightGrams);
+	}, [product.id, product.defaultWeightGrams, product.category, product.unitBase]);
 
 	useEffect(() => {
 		let active = true;
@@ -178,8 +216,8 @@ export default function DetalheProduto({ navigation, route }) {
 		};
 	}, [navigation]);
 
-	if (!fontsLoaded || (isStoredProduct && !storedProductReady)) return null;
-	if (isStoredProduct && !storedProduct) {
+	if (!fontsLoaded || (!localProduct && !storedProductReady)) return null;
+	if (removed || (!localProduct && !storedProduct)) {
 		return (
 			<SafeAreaScreen style={styles.safeArea}>
 				<View style={styles.topBand} />
@@ -203,7 +241,7 @@ export default function DetalheProduto({ navigation, route }) {
 					: `${product.name} removido dos favoritos`
 			);
 		} catch {
-			Alert.alert('Favoritos', 'Não foi possível atualizar seus favoritos.');
+			showGlobalNotification('Não foi possível atualizar seus favoritos.');
 		}
 	}
 
@@ -213,15 +251,18 @@ export default function DetalheProduto({ navigation, route }) {
 			publishSacolaCount(nextItems);
 			showGlobalNotification(`${productToAdd.name} adicionado à sacola`);
 		} catch {
-			Alert.alert('Sacola', 'Não foi possível adicionar o produto.');
+			showGlobalNotification('Não foi possível adicionar o produto.');
 		}
 	}
 
 	// O "+" abre mais opções de peso na própria tela (o Alert do Android só mostra 3 botões e não funciona na web).
 	const isSoldByWeight = !product.unitBase || product.unitBase === 'g';
-	const mainWeights = product.availableWeights.slice(0, 4);
+	const isMeat = isSoldByWeight && product.category === 'Carnes';
+	const mainWeights = isMeat ? MEAT_MAIN_WEIGHTS : product.availableWeights.slice(0, 4);
 	const extraWeights = isSoldByWeight
-		? [...new Set([...product.availableWeights.slice(4), ...BASE_WEIGHTS, ...EXTRA_WEIGHTS])]
+		? [...new Set(isMeat
+			? [...product.availableWeights, ...MEAT_EXTRA_WEIGHTS]
+			: [...product.availableWeights.slice(4), ...BASE_WEIGHTS, ...EXTRA_WEIGHTS])]
 			.filter((weight) => !mainWeights.includes(weight))
 			.sort((a, b) => a - b)
 		: [];
@@ -249,11 +290,13 @@ export default function DetalheProduto({ navigation, route }) {
 					<CircularIconButton
 						style={styles.roundButton}
 						borderRadius={12}
-						icon={<Feather name="chevron-left" size={27} color={COLORS.white} />}
+						icon={<Feather name="chevron-left" size={27} color={tc(COLORS.white)} />}
 						onPress={goBack}
 						accessibilityLabel="Voltar"
 					/>
-					<BotaoSacola navigation={navigation} />
+					<View style={{ flexDirection: 'row', gap: 8 }}>
+						<BotaoNotificacoesCliente navigation={navigation} size={40} />
+					</View>
 				</View>
 
 				<ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -269,12 +312,12 @@ export default function DetalheProduto({ navigation, route }) {
 						<View style={styles.titleRow}>
 							<Text style={styles.productName}>{product.name}</Text>
 							<TouchableOpacity
-								style={styles.favoriteButton}
+								style={[styles.favoriteButton, favoriteIds.includes(product.id) && styles.favoriteButtonActive]}
 								onPress={() => handleFavorite(product.id)}
 								accessibilityRole="button"
 								accessibilityLabel={`${favoriteIds.includes(product.id) ? 'Remover' : 'Adicionar'} aos favoritos`}
 							>
-								<MaterialCommunityIcons name={favoriteIds.includes(product.id) ? 'heart' : 'heart-outline'} size={23} color={favoriteIds.includes(product.id) ? COLORS.red : COLORS.white} />
+								<MaterialCommunityIcons name={favoriteIds.includes(product.id) ? 'heart' : 'heart-outline'} size={23} color={tc(COLORS.white)} />
 							</TouchableOpacity>
 						</View>
 						<Text style={styles.averageWeight}>{product.unitBase && product.unitBase !== 'g' ? `Venda por ${product.unit}` : `Aprox. ${product.averageWeightGrams}g/cada`}</Text>
@@ -321,7 +364,7 @@ export default function DetalheProduto({ navigation, route }) {
 									accessibilityState={{ expanded: showMoreWeights }}
 									accessibilityLabel={showMoreWeights ? 'Mostrar menos opções de peso' : 'Mais opções de peso'}
 								>
-									<Feather name={showMoreWeights ? 'minus' : 'plus'} size={19} color={showMoreWeights ? COLORS.white : COLORS.dark} />
+									<Feather name={showMoreWeights ? 'minus' : 'plus'} size={19} color={tc(showMoreWeights ? COLORS.white : COLORS.dark)} />
 								</TouchableOpacity>
 							)}
 						</View>
@@ -330,9 +373,10 @@ export default function DetalheProduto({ navigation, route }) {
 					<View style={styles.similarSection}>
 						<View style={styles.similarHeading}>
 							<Text style={styles.similarTitle}>Produtos Semelhantes</Text>
-							<TouchableOpacity onPress={() => navigation.navigate('TelaHome', { tab: 'TelaProdutos' })} accessibilityRole="button">
-								<Text style={styles.seeMore}>Ver mais ›</Text>
-							</TouchableOpacity>
+							<LinkVerMais
+								onPress={() => navigation.navigate('ProdutosCategoriaScreen', { categoria: product.category === 'HortiFruti' ? 'Horti-Fruti' : product.category })}
+								accessibilityLabel={`Ver mais produtos de ${product.category}`}
+							/>
 						</View>
 						{similarProducts.length > 0 ? (
 							<ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.similarList}>
@@ -357,7 +401,7 @@ export default function DetalheProduto({ navigation, route }) {
 						<Text style={styles.totalValue}>{formatCurrency(total)}</Text>
 					</View>
 					<TouchableOpacity style={styles.addButton} onPress={() => handleAdd()} accessibilityRole="button">
-						<MaterialCommunityIcons name="shopping-outline" size={28} color={COLORS.white} />
+						<MaterialCommunityIcons name="shopping-outline" size={28} color={tc(COLORS.white)} />
 						<Text style={styles.addButtonText}>Adicionar</Text>
 					</TouchableOpacity>
 				</View>
@@ -367,7 +411,7 @@ export default function DetalheProduto({ navigation, route }) {
 	);
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(StyleSheet.create({
 	safeArea: { flex: 1, backgroundColor: COLORS.dark },
 	topBand: { height: 40, backgroundColor: COLORS.dark },
 	screen: {
@@ -407,6 +451,7 @@ const styles = StyleSheet.create({
 	titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 },
 	productName: { flex: 1, color: COLORS.dark, fontFamily: 'LilitaOne_400Regular', fontSize: 40 },
 	favoriteButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.mint, alignItems: 'center', justifyContent: 'center', marginLeft: 12 },
+	favoriteButtonActive: { backgroundColor: COLORS.red },
 	averageWeight: { color: COLORS.muted, fontFamily: 'Montserrat_500Medium', fontSize: 14, marginTop: -2 },
 	priceRow: { flexDirection: 'row', alignItems: 'baseline', gap: 4, flexWrap: 'wrap', marginTop: 2 },
 	mainPrice: { color: COLORS.price, fontFamily: 'LilitaOne_400Regular', fontSize: 42 },
@@ -459,4 +504,4 @@ const styles = StyleSheet.create({
 	totalValue: { color: COLORS.price, fontFamily: 'LilitaOne_400Regular', fontSize: 24 },
 	addButton: { flex: 1, minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, borderRadius: 14, backgroundColor: COLORS.price },
 	addButtonText: { color: COLORS.white, fontFamily: 'LilitaOne_400Regular', fontSize: 24 },
-});
+}));

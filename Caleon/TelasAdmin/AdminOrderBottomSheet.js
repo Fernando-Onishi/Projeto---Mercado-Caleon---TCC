@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-	Alert,
 	Animated,
 	Dimensions,
 	Image,
@@ -13,7 +12,11 @@ import {
 	View,
 } from 'react-native';
 import Feather from '@expo/vector-icons/Feather';
+import FotoCliente from '../Componentes/FotoCliente';
 import { ADMIN_THEME } from '../Config/AdminTheme';
+import { showGlobalNotification } from '../Componentes/NotificacaoGlobal';
+import { themedStyles, tc } from '../Config/Tema';
+import { productName } from '../Config/Produtos';
 
 const C = ADMIN_THEME.colors;
 const WINDOW_HEIGHT = Dimensions.get('window').height;
@@ -55,7 +58,7 @@ function normalizeOrder(order) {
 		const category = getFirstValue(item, ['category', 'categoria']);
 		return {
 			id: String(getFirstValue(item, ['id', 'itemId', 'productId', 'produtoId']) ?? index),
-			name: getFirstValue(item, ['name', 'nome', 'productName', 'produto']) || 'Item do pedido',
+			name: productName(getFirstValue(item, ['name', 'nome', 'productName', 'produto']) || 'Item do pedido'),
 			detail: description || [weight, category].filter(Boolean).join(' | '),
 			quantity: quantity === null ? '' : `${numericQuantity}${unit ? ` ${unit}` : ''}`,
 			priceCents: parseAmount(getFirstValue(item, ['price', 'preco', 'valor', 'lineTotal', 'total'])),
@@ -152,25 +155,25 @@ export default function AdminOrderBottomSheet({ order, onClose, onComplete, onCa
 
 	function completeSeparation() {
 		if (normalizedOrder.items.length === 0) {
-			Alert.alert('Pedido sem itens', 'Não há itens disponíveis para conferir neste pedido.');
+			showGlobalNotification('Não há itens para conferir neste pedido.');
 			return;
 		}
 		if (checkedCount !== normalizedOrder.items.length) {
-			Alert.alert('Conferência incompleta', 'Confira todos os itens antes de concluir a separação.');
+			showGlobalNotification('Confira todos os itens antes de concluir a separação.');
 			return;
 		}
 		onComplete?.();
 	}
 
 	return (
-		<Modal transparent visible onShow={openSheet} onRequestClose={closeSheet} animationType="none">
+		<Modal transparent statusBarTranslucent visible onShow={openSheet} onRequestClose={closeSheet} animationType="none">
 			<View style={styles.modalRoot}>
 				<TouchableOpacity style={styles.scrimTouch} onPress={closeSheet} activeOpacity={1} accessibilityLabel="Fechar detalhes do pedido" />
 				<Animated.View pointerEvents="none" style={[styles.scrim, { opacity: backdropOpacity }]} />
 				<Animated.View style={[styles.sheet, { transform: [{ translateY }] }]}>
 					<View style={styles.sheetTop}>
 						<TouchableOpacity style={styles.closeButton} onPress={closeSheet} accessibilityRole="button" accessibilityLabel="Fechar">
-							<Feather name="x" size={23} color={C.white} />
+							<Feather name="x" size={23} color={tc(C.white)} />
 						</TouchableOpacity>
 						<View style={styles.handleTouch} {...panResponder.panHandlers}>
 							<View style={styles.handle} />
@@ -178,7 +181,7 @@ export default function AdminOrderBottomSheet({ order, onClose, onComplete, onCa
 					</View>
 
 					<View style={styles.customerCard}>
-						<View style={styles.avatar} />
+						<FotoCliente userId={order?.userId} size={50} />
 						<View style={styles.customerInfo}>
 							<Text style={styles.customerName} numberOfLines={1}>{normalizedOrder.customer}</Text>
 							<Text style={styles.meta} numberOfLines={1}>{normalizedOrder.receivedText}</Text>
@@ -220,7 +223,7 @@ export default function AdminOrderBottomSheet({ order, onClose, onComplete, onCa
 											<Text style={styles.itemPrice} numberOfLines={1}>{formatCurrency(item.priceCents)}</Text>
 										</View>
 										<View style={[styles.check, isChecked && styles.checked]}>
-											{isChecked ? <Feather name="check" size={23} color={C.white} /> : null}
+											{isChecked ? <Feather name="check" size={23} color={tc(C.white)} /> : null}
 										</View>
 									</TouchableOpacity>
 								);
@@ -253,10 +256,10 @@ export default function AdminOrderBottomSheet({ order, onClose, onComplete, onCa
 	);
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(StyleSheet.create({
 	modalRoot: { flex: 1, justifyContent: 'flex-end' },
-	scrimTouch: { ...StyleSheet.absoluteFillObject, top: 82, bottom: 0 },
-	scrim: { ...StyleSheet.absoluteFillObject, top: 82, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.28)' },
+	scrimTouch: { ...StyleSheet.absoluteFillObject },
+	scrim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0, 0, 0, 0.28)' },
 	sheet: {
 		position: 'absolute',
 		left: 0,
@@ -314,4 +317,4 @@ const styles = StyleSheet.create({
 	cancelButton: { flex: 1, minHeight: 41, paddingHorizontal: 6, borderRadius: 15, backgroundColor: '#FF0808', alignItems: 'center', justifyContent: 'center', elevation: 3 },
 	finishButton: { flex: 1, minHeight: 41, paddingHorizontal: 6, borderRadius: 15, backgroundColor: C.success, alignItems: 'center', justifyContent: 'center', elevation: 3 },
 	buttonText: { color: C.white, fontFamily: ADMIN_THEME.fonts.display, fontSize: 14, textAlign: 'center' },
-});
+}));

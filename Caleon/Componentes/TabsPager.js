@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
 	Animated,
 	BackHandler,
@@ -10,10 +10,39 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TabPagerContext, TabPagerPageContext } from './TabPagerContext';
+import { themeColor, themedStyles } from '../Config/Tema';
+
+// Última aba aberta em cada carrossel (sobrevive ao redesenho do app quando o tema muda).
+const lastTabByRoute = new Map();
 
 // Duração base + um pouco por tela atravessada: pular várias abas passa por todas, mas rápido.
 const BASE_DURATION = 260;
 const DURATION_PER_PAGE = 70;
+
+// Uma página do carrossel. Só é redesenhada quando muda o que ela recebe
+// (trocar de aba não redesenha as outras telas — era isso que atrasava o toque na barra).
+const PagerPage = memo(function PagerPage({ pageRoute, Component, navigation, route, pageProps, isActive, width }) {
+	return (
+		<View
+			style={[styles.page, { width }]}
+			importantForAccessibility={isActive ? 'auto' : 'no-hide-descendants'}
+			accessibilityElementsHidden={!isActive}
+		>
+			<TabPagerPageContext.Provider value={pageRoute}>
+				<Component navigation={navigation} route={route} {...pageProps} />
+			</TabPagerPageContext.Provider>
+		</View>
+	);
+}, (prev, next) => {
+	const keys = new Set([...Object.keys(prev.pageProps || {}), ...Object.keys(next.pageProps || {})]);
+	const samePageProps = [...keys].every((key) => prev.pageProps?.[key] === next.pageProps?.[key]);
+	return samePageProps
+		&& prev.isActive === next.isActive
+		&& prev.width === next.width
+		&& prev.navigation === next.navigation
+		&& prev.route === next.route
+		&& prev.Component === next.Component;
+});
 
 /**
  * Carrossel de abas: todas as páginas ficam lado a lado e a troca de aba desliza na horizontal,
@@ -35,8 +64,12 @@ export default function TabsPager({
 	const insets = useSafeAreaInsets();
 	const tabRoutes = useMemo(() => pages.map((page) => page.route), [pages]);
 	const homeRoute = tabRoutes[0];
-	const initialIndex = Math.max(0, tabRoutes.indexOf(route?.params?.tab));
+	// Ao trocar o tema o app é redesenhado: volta na mesma aba em que a pessoa estava.
+	const requestedIndex = tabRoutes.indexOf(route?.params?.tab);
+	const initialIndex = requestedIndex >= 0 ? requestedIndex : (lastTabByRoute.get(route.key) ?? 0);
 	const [activeIndex, setActiveIndex] = useState(initialIndex);
+	// A barra muda na hora do toque; o resto da troca de aba vem logo depois, sem travar o toque.
+	const [barIndex, setBarIndex] = useState(initialIndex);
 	const position = useRef(new Animated.Value(initialIndex)).current;
 	const activeIndexRef = useRef(initialIndex);
 	const historyRef = useRef([]);
@@ -52,7 +85,9 @@ export default function TabsPager({
 		if (nextIndex < 0 || nextIndex === currentIndex) return;
 		if (recordHistory) historyRef.current.push(currentIndex);
 		activeIndexRef.current = nextIndex;
-		setActiveIndex(nextIndex);
+		lastTabByRoute.set(route.key, nextIndex);
+		setBarIndex(nextIndex);
+		startTransition(() => setActiveIndex(nextIndex));
 		emitToPage(tabRoutes[currentIndex], 'blur');
 		emitToPage(tabRoutes[nextIndex], 'focus');
 
@@ -65,7 +100,7 @@ export default function TabsPager({
 			useNativeDriver: Platform.OS !== 'web',
 		});
 		animationRef.current.start();
-	}, [position, tabRoutes, emitToPage]);
+	}, [position, tabRoutes, emitToPage, route.key]);
 
 	const goTo = useCallback((routeName) => {
 		goToIndex(tabRoutes.indexOf(routeName));
@@ -162,38 +197,37 @@ export default function TabsPager({
 	})), [pages, route.key, homeParams]);
 
 	const activeRoute = tabRoutes[activeIndex];
+	const barLabel = pages[barIndex].label;
+	const bar = useMemo(() => renderBar({ navigation: tabNavigation, activeLabel: barLabel }), [renderBar, tabNavigation, barLabel]);
 	const pagerValue = useMemo(() => ({ activeRoute, goTo, homeRoute }), [activeRoute, goTo, homeRoute]);
 	const translateX = useMemo(() => Animated.multiply(position, -width), [position, width]);
 
 	return (
 		<TabPagerContext.Provider value={pagerValue}>
-			<View style={[styles.root, backgroundColor ? { backgroundColor } : null]}>
+			<View style={[styles.root, backgroundColor ? { backgroundColor: themeColor(backgroundColor, 'bg') } : null]}>
 				<Animated.View style={[styles.track, { width: width * pages.length, transform: [{ translateX }] }]}>
-					{pages.map(({ route: pageRoute, Component }, index) => {
-						const isActive = index === activeIndex;
-						return (
-							<View
-								key={pageRoute}
-								style={[styles.page, { width }]}
-								importantForAccessibility={isActive ? 'auto' : 'no-hide-descendants'}
-								accessibilityElementsHidden={!isActive}
-							>
-								<TabPagerPageContext.Provider value={pageRoute}>
-									<Component navigation={pageNavigations[index]} route={pageRoutes[index]} {...pageProps} />
-								</TabPagerPageContext.Provider>
-							</View>
-						);
-					})}
+					{pages.map(({ route: pageRoute, Component }, index) => (
+						<PagerPage
+							key={pageRoute}
+							pageRoute={pageRoute}
+							Component={Component}
+							navigation={pageNavigations[index]}
+							route={pageRoutes[index]}
+							pageProps={pageProps}
+							isActive={index === activeIndex}
+							width={width}
+						/>
+					))}
 				</Animated.View>
-				<View style={[styles.bottomBar, { paddingBottom: insets.bottom }, barBackgroundColor ? { backgroundColor: barBackgroundColor } : null]}>
-					{renderBar({ navigation: tabNavigation, activeLabel: pages[activeIndex].label })}
+				<View style={[styles.bottomBar, { paddingBottom: insets.bottom }, barBackgroundColor ? { backgroundColor: themeColor(barBackgroundColor, 'bg') } : null]}>
+					{bar}
 				</View>
 			</View>
 		</TabPagerContext.Provider>
 	);
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(StyleSheet.create({
 	root: {
 		flex: 1,
 		overflow: 'hidden',
@@ -214,4 +248,4 @@ const styles = StyleSheet.create({
 		backgroundColor: '#FFFFFF',
 		zIndex: 10,
 	},
-});
+}));

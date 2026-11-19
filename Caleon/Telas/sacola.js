@@ -14,17 +14,20 @@ import {
   TouchableOpacity,
   UIManager,
   View,
+  DeviceEventEmitter,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Feather, Ionicons } from '@expo/vector-icons';
 
 import NavegacaoInferior from '../Componentes/NavegacaoInferior';
 import CircularIconButton from '../Componentes/CircularIconButton';
+import BotaoNotificacoesCliente from '../Componentes/BotaoNotificacoesCliente';
 import { publishSacolaCount } from '../Componentes/useSacolaCount';
-import { PRODUCTS } from '../Config/Produtos';
-import { getFavorites, toggleFavorite as persistFavorite } from '../Config/ProdutoStorage';
+import { PRODUCTS, productName } from '../Config/Produtos';
+import { CART_CHANGED_EVENT, getFavorites, toggleFavorite as persistFavorite, writeCart } from '../Config/ProdutoStorage';
 import SafeAreaScreen from '../Componentes/SafeAreaScreen';
 import { showGlobalNotification } from '../Componentes/NotificacaoGlobal';
+import { themedStyles, tc } from '../Config/Tema';
 
 if (
   Platform.OS === 'android' &&
@@ -145,13 +148,13 @@ function SwipeableCard({ children, onDelete, onFavorite }) {
             <Ionicons
               name={favoriteCommitted ? 'heart' : 'heart-outline'}
               size={38}
-              color="#fff"
+              color={tc('#fff')}
             />
           </View>
         </Animated.View>
         <Animated.View style={[styles.deleteBtnBg, { opacity: deleteOpacity }]}>
           <View style={styles.deleteBtnAction}>
-            <Feather name="trash-2" size={40} color="#fff" />
+            <Feather name="trash-2" size={40} color={tc('#fff')} />
           </View>
         </Animated.View>
         <Animated.View
@@ -182,8 +185,7 @@ export default function TelaSacola({ navigation }) {
         publishSacolaCount(savedItems);
       } else {
         setItens([]);
-        await AsyncStorage.setItem(SACOLA_KEY, JSON.stringify([]));
-        publishSacolaCount([]);
+        await writeCart([], { sync: false });
       }
     } catch (error) {
       console.error('Erro ao carregar sacola:', error);
@@ -197,13 +199,17 @@ export default function TelaSacola({ navigation }) {
     const unsubscribe = navigation?.addListener?.('focus', () => {
       carregarSacola();
     });
-    return typeof unsubscribe === 'function' ? unsubscribe : undefined;
+    // Sacola mudou em outra tela ou em outro aparelho (sincronizada pelo Firebase): atualiza na hora.
+    const subscription = DeviceEventEmitter.addListener(CART_CHANGED_EVENT, (items) => setItens(items));
+    return () => {
+      if (typeof unsubscribe === 'function') unsubscribe();
+      subscription.remove();
+    };
   }, [navigation]);
 
   const salvarSacola = async (novosItens) => {
     try {
-      await AsyncStorage.setItem(SACOLA_KEY, JSON.stringify(novosItens));
-      publishSacolaCount(novosItens);
+      await writeCart(novosItens);
     } catch (error) {
       console.error('Erro ao salvar sacola:', error);
     }
@@ -237,7 +243,7 @@ export default function TelaSacola({ navigation }) {
 
   const definirFavorito = async (item) => {
     const productId =
-      item.productId || PRODUCTS.find((product) => product.name === item.nome)?.id;
+      item.productId || PRODUCTS.find((product) => product.name === productName(item.nome))?.id;
 
     try {
       const favoriteIds = await getFavorites();
@@ -271,7 +277,7 @@ export default function TelaSacola({ navigation }) {
   const abrirDetalhes = (item) => {
     const productId =
       item.productId ||
-      PRODUCTS.find((product) => product.name === item.nome)?.id;
+      PRODUCTS.find((product) => product.name === productName(item.nome))?.id;
 
     if (productId) {
       navigation?.navigate?.('TelaDetalheProduto', { productId });
@@ -318,7 +324,7 @@ export default function TelaSacola({ navigation }) {
 
           <View style={styles.produtoInfo}>
             <View style={styles.productTitleRow}>
-              <Text style={styles.produtoNome}>{item.nome}</Text>
+              <Text style={styles.produtoNome}>{productName(item.nome)}</Text>
               {item.peso ? <Text style={styles.produtoPeso}>{item.peso}</Text> : null}
             </View>
             <View style={styles.precoRow}>
@@ -342,7 +348,7 @@ export default function TelaSacola({ navigation }) {
                   accessibilityRole="button"
                   accessibilityLabel={`Diminuir quantidade de ${item.nome}`}
                 >
-                  <Feather name="minus" size={16} color="#000" strokeWidth={3} />
+                  <Feather name="minus" size={16} color={tc('#000')} strokeWidth={3} />
                 </TouchableOpacity>
                 <Text style={styles.quantidadeText}>{item.quantidade}</Text>
                 <TouchableOpacity
@@ -354,7 +360,7 @@ export default function TelaSacola({ navigation }) {
                   accessibilityRole="button"
                   accessibilityLabel={`Aumentar quantidade de ${item.nome}`}
                 >
-                  <Feather name="plus" size={16} color="#000" strokeWidth={3} />
+                  <Feather name="plus" size={16} color={tc('#000')} strokeWidth={3} />
                 </TouchableOpacity>
               </View>
             </View>
@@ -367,7 +373,7 @@ export default function TelaSacola({ navigation }) {
               accessibilityRole="button"
               accessibilityLabel={`Ver detalhes de ${item.nome}`}
             >
-              <Ionicons name="chevron-forward" size={28} color="#111" />
+              <Ionicons name="chevron-forward" size={28} color={tc('#111')} />
             </TouchableOpacity>
           </View>
         </View>
@@ -388,11 +394,14 @@ export default function TelaSacola({ navigation }) {
           <CircularIconButton
             style={styles.backButton}
             borderRadius={12}
-            icon={<Feather name="chevron-left" size={27} color="#fff" />}
+            icon={<Feather name="chevron-left" size={27} color={tc('#fff')} />}
             onPress={() => navigation?.goBack?.()}
             accessibilityLabel="Voltar"
           />
           <Text style={styles.headerTitulo}>Sacola</Text>
+          <View style={styles.notificationButton}>
+            <BotaoNotificacoesCliente navigation={navigation} size={40} />
+          </View>
         </View>
 
         <View style={styles.painel}>
@@ -405,7 +414,7 @@ export default function TelaSacola({ navigation }) {
 
             {itens.length === 0 && carregado ? (
               <View style={styles.sacolaVazia}>
-                <Ionicons name="bag-outline" size={60} color="#ccc" />
+                <Ionicons name="bag-outline" size={60} color={tc('#ccc')} />
                 <Text style={styles.sacolaVaziaTexto}>Sua sacola está vazia</Text>
               </View>
             ) : null}
@@ -451,7 +460,7 @@ export default function TelaSacola({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(StyleSheet.create({
   container: { flex: 1, backgroundColor: '#1B4B3D' },
   topBand: { height: 40, backgroundColor: '#1B4B3D' },
   screenPanel: {
@@ -466,6 +475,11 @@ const styles = StyleSheet.create({
     height: 116,
     alignItems: 'center',
     paddingTop: 15,
+  },
+  notificationButton: {
+    position: 'absolute',
+    top: 15,
+    right: 16,
   },
   backButton: {
     position: 'absolute',
@@ -718,4 +732,4 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: 'LuckiestGuy',
   },
-});
+}));

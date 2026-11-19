@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { DeviceEventEmitter, StyleSheet, Text, View } from 'react-native';
+import { themedStyles } from '../Config/Tema';
 
 const NOTIFICATION_EVENT = 'caleon:notification';
 
@@ -35,7 +36,7 @@ export default function NotificacaoGlobal() {
 	);
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(StyleSheet.create({
 	host: {
 		position: 'absolute',
 		left: 0,
@@ -58,4 +59,4 @@ const styles = StyleSheet.create({
 		fontFamily: 'LilitaOne_400Regular',
 		textAlign: 'center',
 	},
-});
+}));

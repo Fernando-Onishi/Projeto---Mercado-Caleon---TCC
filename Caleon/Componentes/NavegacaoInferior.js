@@ -6,6 +6,8 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import Octicons from '@expo/vector-icons/Octicons';
 import useSacolaCount from './useSacolaCount';
+import useFavoritosCount from './useFavoritosCount';
+import { themedStyles, tc } from '../Config/Tema';
 
 const tabs = [
   { label: 'Início', icon: 'home', route: 'TelaHome' },
@@ -17,6 +19,7 @@ const tabs = [
 
 export default function NavegacaoInferior({ activeTab, navigation, onUnavailable }) {
   const bagCount = useSacolaCount();
+  const favoriteCount = useFavoritosCount();
 
   const pager = useTabPager();
   const pagerPage = useTabPagerPage();
@@ -63,30 +66,38 @@ export default function NavegacaoInferior({ activeTab, navigation, onUnavailable
             accessibilityLabel={tab.label}
             accessibilityState={{ selected: active }}
           >
-            <View style={[styles.tabIcon, active && styles.activeTabIcon]}>
+            <View style={styles.tabIcon}>
+              {/* Fundo verde como peça própria: no Android o arredondamento some quando a cor muda depois. */}
+              {active ? <View style={styles.activeBg} pointerEvents="none" /> : null}
               {tab.label === 'Início' ? (
                 <Octicons
                   name={active ? 'home-fill' : 'home'}
                   size={23}
-                  color={active ? '#ffffff' : '#757575'}
+                  color={tc(active ? '#ffffff' : '#757575')}
                 />
               ) : tab.label === 'Favoritos' ? (
                 <Ionicons
                   name={active ? 'heart' : 'heart-outline'}
                   size={26}
-                  color={active ? '#ffffff' : '#757575'}
+                  color={tc(active ? '#ffffff' : '#757575')}
                 />
               ) : (
                 <MaterialCommunityIcons
                   name={active && tab.activeIcon ? tab.activeIcon : tab.icon}
                   size={26}
-                  color={active ? '#ffffff' : '#757575'}
+                  color={tc(active ? '#ffffff' : '#757575')}
                 />
               )}
 
               {tab.label === 'Sacola' && bagCount > 0 && (
                 <View style={styles.tabBadge}>
                   <Text style={styles.badgeText}>{bagCount > 99 ? '99+' : bagCount}</Text>
+                </View>
+              )}
+
+              {tab.label === 'Favoritos' && favoriteCount > 0 && (
+                <View style={styles.tabBadge}>
+                  <Text style={styles.badgeText}>{favoriteCount > 99 ? '99+' : favoriteCount}</Text>
                 </View>
               )}
             </View>
@@ -99,7 +110,7 @@ export default function NavegacaoInferior({ activeTab, navigation, onUnavailable
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(StyleSheet.create({
   pagerSpacer: {
     height: 92,
   },
@@ -126,6 +137,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     position: 'relative',
     borderRadius: 12,
+  },
+  activeBg: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 12,
+    backgroundColor: '#076653',
   },
   activeTabIcon: {
     backgroundColor: '#076653',
@@ -156,4 +172,4 @@ const styles = StyleSheet.create({
   activeTabLabel: {
     color: '#076653',
   },
-});
+}));

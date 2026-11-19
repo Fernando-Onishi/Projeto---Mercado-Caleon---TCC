@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { useFonts } from 'expo-font';
 import {
 	ActivityIndicator,
+	Image,
 	StatusBar,
 	StyleSheet,
 	Text,
@@ -12,10 +13,15 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTabFocused } from '../Componentes/TabPagerContext';
 import Feather from '@expo/vector-icons/Feather';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { useCameraPermissions } from 'expo-camera';
+import CameraSegura from '../Componentes/CameraSegura';
 import CircularIconButton from '../Componentes/CircularIconButton';
 import NavegacaoAdmin from '../Componentes/NavegacaoAdmin';
 import { ADMIN_THEME } from '../Config/AdminTheme';
+import { useProductModal } from '../Componentes/ProductModalContext';
+import { resolveScannedCode } from '../Config/CodigoBarras';
+import { formatCurrency } from '../Config/Produtos';
+import { themedStyles, tc } from '../Config/Tema';
 
 const COLORS = ADMIN_THEME.colors;
 
@@ -29,7 +35,10 @@ function formatBarcodeType(type) {
 	return type.toUpperCase().replace('_', '-');
 }
 
-export default function AdminQrCode({ navigation }) {
+export default function AdminQrCode({ navigation, userRole }) {
+	const { openProductModal, isProductModalOpen } = useProductModal();
+	// Resultado da busca do código: { status: 'loading' | 'store' | 'found' | 'unknown', product }
+	const [lookup, setLookup] = useState(null);
 	useFonts({
 		LilitaOne_400Regular: require('@expo-google-fonts/lilita-one/400Regular/LilitaOne_400Regular.ttf'),
 		Montserrat_400Regular: require('@expo-google-fonts/montserrat/400Regular/Montserrat_400Regular.ttf'),
@@ -57,12 +66,27 @@ export default function AdminQrCode({ navigation }) {
 		scanLock.current = true;
 		setScanned(true);
 		setScanResult({ data: result.data, type: result.type });
+		const code = String(result.data).trim();
+		setLookup({ status: 'loading', code });
+		resolveScannedCode(code)
+			.then((resolved) => setLookup((current) => (current?.code === code ? { ...resolved, code } : current)))
+			.catch(() => setLookup((current) => (current?.code === code ? { status: 'unknown', code, product: { barcode: code } } : current)));
+	}
+
+	function registerScanned() {
+		if (!lookup?.product) return;
+		if (lookup.status === 'store') {
+			openProductModal({ productId: lookup.product.id, product: lookup.product });
+		} else {
+			openProductModal({ product: lookup.product });
+		}
 	}
 
 	function scanAgain() {
 		scanLock.current = false;
 		setScanned(false);
 		setScanResult(null);
+		setLookup(null);
 		setCameraError('');
 		setCameraKey((key) => key + 1);
 	}
@@ -95,7 +119,7 @@ export default function AdminQrCode({ navigation }) {
 		return (
 			<View style={styles.permissionRoot}>
 				<View style={styles.permissionScreen}>
-					<ActivityIndicator size="large" color={COLORS.mint} />
+					<ActivityIndicator size="large" color={tc(COLORS.mint)} />
 					<Text style={styles.permissionMessage}>Verificando permissão da câmera...</Text>
 				</View>
 				<View style={[styles.bottomNavigation, { paddingBottom: insets.bottom }]}><NavegacaoAdmin navigation={navigation} activeTab="QR Code" /></View>
@@ -110,11 +134,11 @@ export default function AdminQrCode({ navigation }) {
 					{isFocused ? <StatusBar barStyle="light-content" backgroundColor={COLORS.green} /> : null}
 					<CircularIconButton
 						style={[styles.permissionBack, { top: insets.top + 12 }]}
-						icon={<Feather name="chevron-left" size={27} color={COLORS.white} />}
+						icon={<Feather name="chevron-left" size={27} color={tc(COLORS.white)} />}
 						onPress={() => navigation.goBack()}
 						accessibilityLabel="Voltar"
 					/>
-					<Feather name="camera-off" size={56} color={COLORS.mint} />
+					<Feather name="camera-off" size={56} color={tc(COLORS.mint)} />
 					<Text style={styles.permissionTitle}>Permissão da câmera</Text>
 					<Text style={styles.permissionMessage}>
 						Permita o acesso à câmera para ler QR Codes e códigos de barras.
@@ -131,30 +155,26 @@ export default function AdminQrCode({ navigation }) {
 	return (
 		<View style={styles.container}>
 			{isFocused ? <StatusBar barStyle="light-content" backgroundColor="transparent" translucent /> : null}
-			{isFocused && !cameraError ? (
-				<CameraView
-					key={cameraKey}
-					style={StyleSheet.absoluteFill}
-					facing={facing}
-					enableTorch={flashAtivo && facing === 'back'}
-					barcodeScannerSettings={{ barcodeTypes: BARCODE_TYPES[modoLeitura] }}
-					onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
-					onMountError={({ message }) => {
-						console.error('Não foi possível iniciar a câmera do scanner.', message);
-						setCameraError(message || 'Não foi possível iniciar a câmera.');
-					}}
-				/>
-			) : null}
+			{/* Câmera desliga fora da aba e quando o formulário de produto (que tem leitor próprio) está aberto. */}
+			<CameraSegura
+				key={cameraKey}
+				active={isFocused && !isProductModalOpen}
+				style={StyleSheet.absoluteFill}
+				facing={facing}
+				enableTorch={flashAtivo && facing === 'back'}
+				barcodeScannerSettings={{ barcodeTypes: BARCODE_TYPES[modoLeitura] }}
+				onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
+			/>
 
 			{cameraError ? (
 				<View style={styles.cameraErrorPanel}>
 					<CircularIconButton
 						style={[styles.permissionBack, { top: insets.top + 12 }]}
-						icon={<Feather name="chevron-left" size={27} color={COLORS.white} />}
+						icon={<Feather name="chevron-left" size={27} color={tc(COLORS.white)} />}
 						onPress={() => navigation.goBack()}
 						accessibilityLabel="Voltar"
 					/>
-					<Feather name="camera-off" size={50} color={COLORS.white} />
+					<Feather name="camera-off" size={50} color={tc(COLORS.white)} />
 					<Text style={styles.cameraErrorText}>Não foi possível iniciar a câmera.</Text>
 					<TouchableOpacity style={styles.primaryButton} onPress={scanAgain}>
 						<Text style={styles.primaryButtonText}>Tentar novamente</Text>
@@ -174,12 +194,12 @@ export default function AdminQrCode({ navigation }) {
 
 					<View style={[styles.header, { top: insets.top + 12 }]}>
 						<CircularIconButton
-							icon={<Feather name="chevron-left" size={30} color={COLORS.white} />}
+							icon={<Feather name="chevron-left" size={30} color={tc(COLORS.white)} />}
 							onPress={() => navigation.goBack()}
 							accessibilityLabel="Voltar"
 						/>
 						<CircularIconButton
-							icon={<Feather name={flashAtivo ? 'zap' : 'zap-off'} size={24} color={COLORS.white} />}
+							icon={<Feather name={flashAtivo ? 'zap' : 'zap-off'} size={24} color={tc(COLORS.white)} />}
 							onPress={alternarFlash}
 							accessibilityState={{ selected: flashAtivo }}
 							accessibilityLabel={flashAtivo ? 'Desligar lanterna' : 'Ligar lanterna'}
@@ -194,11 +214,48 @@ export default function AdminQrCode({ navigation }) {
 
 					{scanResult ? (
 						<View style={[styles.resultPanel, { bottom: insets.bottom + 77 + 144 }]}>
-							<Text style={styles.resultTitle}>Código lido</Text>
-							<Text style={styles.resultType}>{formatBarcodeType(scanResult.type)}</Text>
-							<Text selectable style={styles.resultData}>{scanResult.data}</Text>
-							<TouchableOpacity style={styles.primaryButton} onPress={scanAgain}>
-								<Text style={styles.primaryButtonText}>Escanear Novamente</Text>
+							<Text style={styles.resultType}>{formatBarcodeType(scanResult.type)} • {scanResult.data}</Text>
+							{!lookup || lookup.status === 'loading' ? (
+								<View style={styles.lookupRow}>
+									<ActivityIndicator color={tc(COLORS.green)} />
+									<Text style={styles.lookupText}>Procurando o produto...</Text>
+								</View>
+							) : (
+								<>
+									<View style={styles.lookupRow}>
+										{lookup.product?.imageUrl ? (
+											<Image source={{ uri: lookup.product.imageUrl }} style={styles.lookupImage} resizeMode="contain" />
+										) : (
+											<View style={[styles.lookupImage, styles.lookupImageEmpty]}>
+												<Feather name={lookup.status === 'unknown' ? 'help-circle' : 'package'} size={22} color={tc(COLORS.muted)} />
+											</View>
+										)}
+										<View style={styles.lookupCopy}>
+											<Text style={styles.lookupTag}>
+												{lookup.status === 'store' ? 'Já está no catálogo' : lookup.status === 'found' ? 'Produto encontrado' : 'Produto desconhecido'}
+											</Text>
+											<Text style={styles.lookupName} numberOfLines={2}>
+												{lookup.product?.name || 'Sem nome — preencha no cadastro'}
+											</Text>
+											<Text style={styles.lookupMeta} numberOfLines={1}>
+												{lookup.status === 'store'
+													? `${formatCurrency(Number(lookup.product.pricePerKg) || 0)} • estoque ${Number(lookup.product.stockCurrent) || 0}`
+													: [lookup.product?.category, lookup.product?.unit].filter(Boolean).join(' • ')}
+											</Text>
+										</View>
+									</View>
+									{userRole === 'admin' ? (
+										<TouchableOpacity style={styles.primaryButton} onPress={registerScanned} accessibilityRole="button">
+											<Feather name={lookup.status === 'store' ? 'edit-2' : 'plus'} size={18} color={tc(COLORS.white)} />
+											<Text style={styles.primaryButtonText}>
+												{lookup.status === 'store' ? 'Editar produto' : 'Cadastrar produto'}
+											</Text>
+										</TouchableOpacity>
+									) : null}
+								</>
+							)}
+							<TouchableOpacity style={styles.secondaryButton} onPress={scanAgain} accessibilityRole="button">
+								<Text style={styles.secondaryButtonText}>Escanear novamente</Text>
 							</TouchableOpacity>
 						</View>
 					) : null}
@@ -227,7 +284,7 @@ export default function AdminQrCode({ navigation }) {
 						</View>
 						<View style={styles.flipControl}>
 							<CircularIconButton
-								icon={<Feather name="refresh-cw" size={24} color={COLORS.white} />}
+								icon={<Feather name="refresh-cw" size={24} color={tc(COLORS.white)} />}
 								onPress={alternarLadoCamera}
 								accessibilityLabel={facing === 'back' ? 'Usar câmera frontal' : 'Usar câmera traseira'}
 							/>
@@ -241,7 +298,7 @@ export default function AdminQrCode({ navigation }) {
 	);
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(StyleSheet.create({
 	container: {
 		flex: 1,
 		backgroundColor: '#000000',
@@ -321,9 +378,22 @@ const styles = StyleSheet.create({
 		fontSize: 14,
 		textAlign: 'center',
 	},
+	lookupRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 12 },
+	lookupText: { color: COLORS.white, fontFamily: ADMIN_THEME.fonts.medium, fontSize: 14 },
+	lookupImage: { width: 64, height: 64, borderRadius: 12, backgroundColor: COLORS.white },
+	lookupImageEmpty: { alignItems: 'center', justifyContent: 'center' },
+	lookupCopy: { flex: 1, minWidth: 0 },
+	lookupTag: { color: '#FFC928', fontFamily: ADMIN_THEME.fonts.bold, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 },
+	lookupName: { marginTop: 2, color: COLORS.white, fontFamily: ADMIN_THEME.fonts.bold, fontSize: 15 },
+	lookupMeta: { marginTop: 2, color: '#A8E8D1', fontFamily: ADMIN_THEME.fonts.body, fontSize: 12 },
+	secondaryButton: { minHeight: 42, marginTop: 8, borderRadius: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.4)' },
+	secondaryButtonText: { color: COLORS.white, fontFamily: ADMIN_THEME.fonts.bold, fontSize: 14 },
 	primaryButton: {
 		minHeight: 46,
+		marginTop: 14,
 		paddingHorizontal: 18,
+		flexDirection: 'row',
+		gap: 8,
 		borderRadius: 12,
 		alignItems: 'center',
 		justifyContent: 'center',
@@ -428,4 +498,4 @@ const styles = StyleSheet.create({
 		fontSize: 13,
 		fontWeight: '600',
 	},
-});
+}));

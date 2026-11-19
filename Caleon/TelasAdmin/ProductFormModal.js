@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useFonts } from 'expo-font';
 import {
 	ActivityIndicator,
-	Alert,
 	Animated,
 	Easing,
 	Image,
@@ -20,13 +19,18 @@ import {
 	useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { useCameraPermissions } from 'expo-camera';
+import CameraSegura from '../Componentes/CameraSegura';
 import { collection, doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
-import { deleteObject, getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import * as ImagePicker from 'expo-image-picker';
 import Feather from '@expo/vector-icons/Feather';
-import { db, storage } from '../Config/FireBaseConfig';
+import { db } from '../Config/FireBaseConfig';
+import { toCompressedDataUrl } from '../Config/ImagemFirestore';
+import { isProductBarcode, lookupPublicProduct } from '../Config/CodigoBarras';
+import { formatExpiry, maskExpiryInput, parseExpiryInput } from './adminProdutoUtils';
+import { showGlobalNotification } from '../Componentes/NotificacaoGlobal';
 import { ADMIN_THEME } from '../Config/AdminTheme';
+import { themedStyles, tc } from '../Config/Tema';
 
 const C = ADMIN_THEME.colors;
 const CATEGORIES = [
@@ -48,6 +52,10 @@ const EMPTY_FORM = {
 	defaultWeightGrams: '250',
 	unit: 'kg',
 	barcode: '',
+	// 'un' = embalagem vendida por unidade (ex.: "2 L"); null = vendido por peso.
+	unitBase: null,
+	// Validade (só o admin vê): dd/mm/aaaa no campo.
+	expiresAt: '',
 	discountPercent: '',
 	images: [],
 	availableWeights: [300, 600, 1000, 1500],
@@ -77,6 +85,8 @@ function mapProductToForm(product = {}) {
 		defaultWeightGrams: toInputValue(safeProduct.defaultWeightGrams ?? 250),
 		unit: toInputValue(safeProduct.unit ?? 'kg'),
 		barcode: toInputValue(safeProduct.barcode),
+		unitBase: safeProduct.unitBase && safeProduct.unitBase !== 'g' ? safeProduct.unitBase : null,
+		expiresAt: formatExpiry(safeProduct),
 		discountPercent: originalPricePerKg > pricePerKg && pricePerKg > 0
 			? String(Math.round((1 - pricePerKg / originalPricePerKg) * 100))
 			: '',
@@ -110,6 +120,7 @@ export default function ProductFormModal({ visible, presentation = 'modal', prod
 	const [isScannerVisible, setIsScannerVisible] = useState(false);
 	const [scannerPermissionGranted, setScannerPermissionGranted] = useState(false);
 	const [hasScanned, setHasScanned] = useState(false);
+	const [isLookingUp, setIsLookingUp] = useState(false);
 	const [openSelect, setOpenSelect] = useState(null);
 	const [cameraPermission, requestCameraPermission] = useCameraPermissions();
 
@@ -120,7 +131,8 @@ export default function ProductFormModal({ visible, presentation = 'modal', prod
 	useEffect(() => {
 		let active = true;
 		if (!productId) {
-			setForm(mapProductToForm());
+			// Cadastro novo: pode vir preenchido (ex.: produto lido pelo código de barras).
+			setForm(mapProductToForm(productFromRoute));
 			setIsLoadingProduct(false);
 			setLoadError('');
 			return () => { active = false; };
@@ -207,7 +219,7 @@ export default function ProductFormModal({ visible, presentation = 'modal', prod
 		try {
 			const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
 			if (!permission.granted) {
-				Alert.alert('Permissão necessária', 'Permita o acesso à galeria para selecionar uma imagem.');
+				showGlobalNotification('Permita o acesso à galeria para selecionar uma imagem.');
 				return;
 			}
 			const result = await ImagePicker.launchImageLibraryAsync({
@@ -229,7 +241,7 @@ export default function ProductFormModal({ visible, presentation = 'modal', prod
 			}
 		} catch (error) {
 			console.error('Não foi possível selecionar a imagem do produto.', error);
-			Alert.alert('Imagem', 'Não foi possível abrir a galeria.');
+			showGlobalNotification('Não foi possível abrir a galeria.');
 		}
 	}
 
@@ -246,7 +258,7 @@ export default function ProductFormModal({ visible, presentation = 'modal', prod
 				? cameraPermission
 				: await requestCameraPermission();
 			if (!permission?.granted) {
-				Alert.alert('Permissão necessária', 'Permita o acesso à câmera para ler o código do produto.');
+				showGlobalNotification('Permita o acesso à câmera para ler o código do produto.');
 				return;
 			}
 			setScannerPermissionGranted(true);
@@ -254,7 +266,7 @@ export default function ProductFormModal({ visible, presentation = 'modal', prod
 			setIsScannerVisible(true);
 		} catch (error) {
 			console.error('Não foi possível solicitar acesso à câmera.', error);
-			Alert.alert('Leitor de código', 'Não foi possível abrir a câmera.');
+			showGlobalNotification('Não foi possível abrir a câmera.');
 		}
 	}
 
@@ -263,34 +275,45 @@ export default function ProductFormModal({ visible, presentation = 'modal', prod
 		setHasScanned(true);
 		updateField('barcode', data);
 		setIsScannerVisible(false);
+		fillFromBarcode(data);
 	}
 
+	// Procura o código nas bases públicas e preenche o que ainda está em branco.
+	async function fillFromBarcode(code) {
+		if (!isProductBarcode(code)) return;
+		setIsLookingUp(true);
+		try {
+			const found = await lookupPublicProduct(code);
+			if (!found) {
+				showGlobalNotification('Produto não encontrado na base pública. Preencha os dados.');
+				return;
+			}
+			setForm((current) => ({
+				...current,
+				name: current.name.trim() ? current.name : found.name,
+				description: current.description.trim() ? current.description : found.description,
+				category: current.name.trim() ? current.category : found.category,
+				unit: found.unit,
+				unitBase: 'un',
+				defaultWeightGrams: '1000',
+				availableWeights: [1000],
+				images: current.images.length || !found.imageUrl ? current.images : [{ uri: found.imageUrl, isLocal: false }],
+			}));
+			showGlobalNotification(`Encontrado: ${found.name}`);
+		} finally {
+			setIsLookingUp(false);
+		}
+	}
+
+	// A foto do produto vai comprimida dentro do próprio documento no Firestore (o Storage não está ativo).
 	async function uploadProductImage(productDocumentId, image) {
 		if (!image.isLocal) return { imageUrl: image.uri, imageRef: null };
-		const response = await fetch(image.uri);
-		if (!response.ok) throw new Error('Não foi possível ler a imagem selecionada.');
-		const blob = await response.blob();
-		const extension = image.uri.split('.').pop()?.split('?')[0]?.toLowerCase();
-		const contentType = extension === 'png' ? 'image/png' : extension === 'webp' ? 'image/webp' : 'image/jpeg';
-		const imageRef = ref(storage, `products/${productDocumentId}/${Date.now()}.${extension === 'png' || extension === 'webp' ? extension : 'jpg'}`);
-		try {
-			await uploadBytes(imageRef, blob, { contentType });
-			return { imageUrl: await getDownloadURL(imageRef), imageRef };
-		} catch (error) {
-			try {
-				await deleteObject(imageRef);
-			} catch (cleanupError) {
-				console.error('Não foi possível remover o upload incompleto da imagem do produto.', cleanupError);
-			}
-			throw error;
-		} finally {
-			if (typeof blob.close === 'function') blob.close();
-		}
+		return { imageUrl: await toCompressedDataUrl(image.uri, { maxSize: 700, quality: 0.7 }), imageRef: null };
 	}
 
 	async function saveProduct() {
 		if (isSaving) return;
-		const name = form.name.trim();
+		const name = form.name.trim().toLocaleUpperCase('pt-BR');
 		const pricePerKg = parseAmount(form.pricePerKg);
 		const originalPricePerKg = form.originalPricePerKg.trim()
 			? parseAmount(form.originalPricePerKg)
@@ -303,43 +326,46 @@ export default function ProductFormModal({ visible, presentation = 'modal', prod
 		const defaultWeightGrams = parseAmount(form.defaultWeightGrams);
 
 		if (!name) {
-			Alert.alert('Produto', 'Informe o nome do produto.');
+			showGlobalNotification('Informe o nome do produto.');
 			return;
 		}
 		if (pricePerKg === null || pricePerKg <= 0) {
-			Alert.alert('Produto', 'Informe um preço por kg válido.');
+			showGlobalNotification('Informe um preço por kg válido.');
 			return;
 		}
 		if (originalPricePerKg !== null && (originalPricePerKg <= 0 || originalPricePerKg < pricePerKg)) {
-			Alert.alert('Produto', 'O preço normal deve ser maior ou igual ao preço de venda.');
+			showGlobalNotification('O preço normal deve ser maior ou igual ao preço de venda.');
 			return;
 		}
 		if (stockCurrent === null || stockCurrent < 0 || stockMinimum === null || stockMinimum < 0) {
-			Alert.alert('Produto', 'Informe quantidades de estoque válidas.');
+			showGlobalNotification('Informe quantidades de estoque válidas.');
 			return;
 		}
 		if (stockMaximum === null || stockMaximum < 0) {
-			Alert.alert('Produto', 'Informe uma quantidade máxima de estoque válida.');
+			showGlobalNotification('Informe uma quantidade máxima de estoque válida.');
 			return;
 		}
 		if (defaultWeightGrams === null || defaultWeightGrams <= 0) {
-			Alert.alert('Produto', 'Informe um peso padrão maior que zero.');
+			showGlobalNotification('Informe um peso padrão maior que zero.');
+			return;
+		}
+		const expiresAt = parseExpiryInput(form.expiresAt);
+		if (expiresAt === undefined) {
+			showGlobalNotification('Validade inválida. Use dia/mês/ano, por exemplo 25/12/2026.');
 			return;
 		}
 		const discountPercent = parseAmount(form.discountPercent);
 		if (discountPercent !== null && (discountPercent < 0 || discountPercent >= 100)) {
-			Alert.alert('Produto', 'Informe um desconto entre 0% e 99%.');
+			showGlobalNotification('Informe um desconto entre 0% e 99%.');
 			return;
 		}
 
 		setIsSaving(true);
-		const uploadedImageRefs = [];
 		try {
 			const productDocument = productId ? doc(db, 'products', productId) : doc(collection(db, 'products'));
 			const uploadedImages = [];
 			for (const image of form.images) {
 				const uploadedImage = await uploadProductImage(productDocument.id, image);
-				if (uploadedImage.imageRef) uploadedImageRefs.push(uploadedImage.imageRef);
 				if (uploadedImage.imageUrl) uploadedImages.push(uploadedImage.imageUrl);
 			}
 			await setDoc(productDocument, {
@@ -357,27 +383,26 @@ export default function ProductFormModal({ visible, presentation = 'modal', prod
 				availableWeights: form.availableWeights,
 				unit: form.unit.trim() || 'kg',
 				barcode: form.barcode.trim(),
+				unitBase: form.unitBase || 'g',
+				expiresAt,
 				imageUrl: uploadedImages[0] || '',
 				imageUrls: uploadedImages,
+				// Foto escolhida pelo admin: a sincronização do catálogo inicial não a substitui mais.
+				...(form.images.some((image) => image.isLocal) ? { imageFromSeed: false } : {}),
 				active: true,
 				updatedAt: serverTimestamp(),
 				...(isEditing && !productFromRoute?.isSeedProduct ? {} : { createdAt: serverTimestamp() }),
 			}, { merge: true });
-			Alert.alert(
-				isEditing ? 'Produto atualizado' : 'Produto cadastrado',
-				isEditing ? 'As alterações foram salvas com sucesso.' : 'O produto foi salvo no catálogo.',
-				[{ text: 'OK', onPress: closeModal }],
-			);
+			// Aviso no topo (funciona também na web, onde o Alert do sistema não aparece) e fecha o formulário.
+			showGlobalNotification(isEditing ? 'Produto atualizado' : 'Produto cadastrado no catálogo');
+			setIsSaving(false);
+			closeModal();
+			return;
 		} catch (error) {
 			console.error('Não foi possível salvar o produto no Firebase.', error);
-			for (const uploadedImageRef of uploadedImageRefs) {
-				try {
-					await deleteObject(uploadedImageRef);
-				} catch (cleanupError) {
-					console.error('Não foi possível limpar a imagem após falha ao salvar o produto.', cleanupError);
-				}
-			}
-			Alert.alert('Erro ao salvar', 'Não foi possível salvar o produto. Verifique sua conexão e suas permissões e tente novamente.');
+			showGlobalNotification(error?.message === 'image-too-large'
+				? 'Foto grande demais. Escolha uma foto menor.'
+				: 'Não foi possível salvar o produto. Confira sua conexão e suas permissões.');
 		} finally {
 			setIsSaving(false);
 		}
@@ -398,7 +423,7 @@ export default function ProductFormModal({ visible, presentation = 'modal', prod
 					{presentation === 'screen' ? (
 						<View style={styles.screenSpacer} pointerEvents="none" />
 					) : (
-						<Animated.View style={[styles.backdrop, { top: modalInsets.paddingTop, bottom: modalInsets.paddingBottom, opacity: sheetProgress }]}>
+						<Animated.View style={[styles.backdrop, { top: 0, bottom: 0, opacity: sheetProgress }]}>
 							<Pressable style={StyleSheet.absoluteFill} onPress={closeModal} disabled={isSaving} accessibilityLabel="Fechar formulário" />
 						</Animated.View>
 					)}
@@ -407,24 +432,24 @@ export default function ProductFormModal({ visible, presentation = 'modal', prod
 					<Animated.View style={isSheet ? [StyleSheet.absoluteFill, { transform: [{ translateY: sheetTranslateY }] }] : styles.screenFormCard} pointerEvents="box-none">
 					<KeyboardAvoidingView
 						style={presentation === 'screen' ? styles.screenFormCard : [styles.modalContentWrap, { height: sheetMaxHeight, bottom: 0 }]}
-						behavior={Platform.OS === 'ios' ? 'padding' : presentation === 'screen' ? 'height' : undefined}
+						behavior="padding"
 					>
 						<View style={[styles.formCard, presentation === 'screen' ? styles.screenFormCard : { height: sheetMaxHeight }]}>
 						<View style={styles.dragHandle} />
 						<View style={styles.formHeader}>
 							<TouchableOpacity style={styles.closeButton} onPress={closeModal} activeOpacity={0.7} disabled={isSaving} accessibilityRole="button" accessibilityLabel="Fechar formulário">
-								<Feather name="x" size={18} color={C.white} />
+								<Feather name="x" size={18} color={tc(C.white)} />
 							</TouchableOpacity>
 							<Text style={styles.formTitle}>{isEditing ? 'Editar Produto' : 'Criar Produto'}</Text>
 							<View style={styles.headerActionSpacer} />
 						</View>
 						{!fontsLoaded && !fontError ? (
-							<View style={styles.loading}><ActivityIndicator size="large" color={C.adminPrimary} /><Text style={styles.loadingText}>Carregando formulário...</Text></View>
+							<View style={styles.loading}><ActivityIndicator size="large" color={tc(C.adminPrimary)} /><Text style={styles.loadingText}>Carregando formulário...</Text></View>
 						) : isLoadingProduct ? (
-							<View style={styles.loading}><ActivityIndicator size="large" color={C.adminPrimary} /><Text style={styles.loadingText}>Carregando produto...</Text></View>
+							<View style={styles.loading}><ActivityIndicator size="large" color={tc(C.adminPrimary)} /><Text style={styles.loadingText}>Carregando produto...</Text></View>
 						) : loadError ? (
 							<View style={styles.loadError}>
-								<Feather name="alert-circle" size={36} color={C.red} />
+								<Feather name="alert-circle" size={36} color={tc(C.red)} />
 								<Text style={styles.errorText}>{loadError}</Text>
 								<TouchableOpacity style={styles.secondaryButton} onPress={closeModal} activeOpacity={0.7}>
 									<Text style={styles.secondaryButtonText}>Fechar</Text>
@@ -434,18 +459,36 @@ export default function ProductFormModal({ visible, presentation = 'modal', prod
 							<>
 								<ScrollView style={styles.formScroll} contentContainerStyle={styles.formContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
 									<FormField label="Produto:">
-										<TextInput style={[styles.input, styles.productInput]} value={form.name} onChangeText={(value) => updateField('name', value)} placeholder="Digite o nome do produto" placeholderTextColor={C.muted} returnKeyType="next" />
+										<TextInput style={[styles.input, styles.productInput]} value={form.name} onChangeText={(value) => updateField('name', value)} placeholder="Digite o nome do produto" placeholderTextColor={tc(C.muted)} returnKeyType="next" autoCapitalize="characters" />
 									</FormField>
-									<FormField label="Descrição">
-										<TextInput style={[styles.input, styles.descriptionInput]} value={form.description} onChangeText={(value) => updateField('description', value)} placeholder="Digite a descrição do produto" placeholderTextColor={C.muted} multiline textAlignVertical="top" />
-									</FormField>
+										<FormField label="Descrição">
+											<TextInput style={[styles.input, styles.descriptionInput]} value={form.description} onChangeText={(value) => updateField('description', value)} placeholder="Digite a descrição do produto" placeholderTextColor={tc(C.muted)} multiline textAlignVertical="top" />
+										</FormField>
+										<FormField label="Código de barras:">
+											<View style={styles.barcodeRow}>
+												<TextInput
+													style={[styles.input, styles.barcodeInput]}
+													value={form.barcode}
+													onChangeText={(value) => updateField('barcode', value.replace(/\D/g, ''))}
+													onEndEditing={() => fillFromBarcode(form.barcode)}
+													placeholder="Ex.: 7894900011517"
+													placeholderTextColor={tc(C.muted)}
+													keyboardType="number-pad"
+													maxLength={14}
+													accessibilityLabel="Código de barras"
+												/>
+												<TouchableOpacity style={styles.scanButton} onPress={openBarcodeScanner} disabled={isLookingUp} accessibilityRole="button" accessibilityLabel="Ler código de barras com a câmera">
+													{isLookingUp ? <ActivityIndicator color={tc(C.white)} /> : <Feather name="maximize" size={20} color={tc(C.white)} />}
+												</TouchableOpacity>
+											</View>
+										</FormField>
 
 									<View style={styles.fieldRow}>
 										<FormField label="Preço Venda:" style={styles.thirdField}>
-											<TextInput style={styles.input} value={form.pricePerKg} onChangeText={(value) => updateField('pricePerKg', value)} placeholder="Ex.: R$ 50,00" placeholderTextColor={C.muted} keyboardType="decimal-pad" />
+											<TextInput style={styles.input} value={form.pricePerKg} onChangeText={(value) => updateField('pricePerKg', value)} placeholder="Ex.: R$ 50,00" placeholderTextColor={tc(C.muted)} keyboardType="decimal-pad" />
 										</FormField>
 										<FormField label="Preço Normal:" style={styles.thirdField}>
-											<TextInput style={styles.input} value={form.originalPricePerKg} onChangeText={(value) => updateField('originalPricePerKg', value)} placeholder="Ex.: R$ 50,00" placeholderTextColor={C.muted} keyboardType="decimal-pad" />
+											<TextInput style={styles.input} value={form.originalPricePerKg} onChangeText={(value) => updateField('originalPricePerKg', value)} placeholder="Ex.: R$ 50,00" placeholderTextColor={tc(C.muted)} keyboardType="decimal-pad" />
 										</FormField>
 										<FormField label="Desconto:" style={styles.thirdField}>
 											<SelectField
@@ -462,10 +505,36 @@ export default function ProductFormModal({ visible, presentation = 'modal', prod
 										<FormField label="Categoria:" style={styles.halfField}>
 											<SelectField value={form.category === 'HortiFruti' ? 'Frutas' : form.category} options={CATEGORIES.map((category) => category === 'HortiFruti' ? 'Frutas' : category)} open={openSelect === 'category'} onToggle={() => setOpenSelect(openSelect === 'category' ? null : 'category')} onSelect={(value) => { updateField('category', value === 'Frutas' ? 'HortiFruti' : value); setOpenSelect(null); }} />
 										</FormField>
+										{form.unitBase === 'un' ? (
+											<FormField label="Embalagem:" style={styles.halfField}>
+												<TextInput style={styles.input} value={form.unit} onChangeText={(value) => updateField('unit', value)} placeholder="Ex.: 2 L, 500g" placeholderTextColor={tc(C.muted)} />
+											</FormField>
+										) : (
 										<FormField label="Peso:" style={styles.halfField}>
 											<SelectField value={`${form.defaultWeightGrams} g`} options={[100, 250, 300, 500, 600, 1000, 1500, 2000].map((weight) => `${weight} g`)} open={openSelect === 'weight'} onToggle={() => setOpenSelect(openSelect === 'weight' ? null : 'weight')} onSelect={(value) => { updateField('defaultWeightGrams', value.replace(' g', '')); setOpenSelect(null); }} />
 										</FormField>
+										)}
 									</View>
+
+									<FormField label="Validade:">
+										<View style={styles.barcodeRow}>
+											<TextInput
+												style={[styles.input, styles.barcodeInput]}
+												value={form.expiresAt}
+												onChangeText={(value) => updateField('expiresAt', maskExpiryInput(value))}
+												placeholder="dd/mm/aaaa (opcional)"
+												placeholderTextColor={tc(C.muted)}
+												keyboardType="number-pad"
+												maxLength={10}
+												accessibilityLabel="Data de validade"
+											/>
+											{form.expiresAt ? (
+												<TouchableOpacity style={styles.clearExpiry} onPress={() => updateField('expiresAt', '')} accessibilityRole="button" accessibilityLabel="Tirar a validade">
+													<Feather name="x" size={18} color={tc('#7A7A7A')} />
+												</TouchableOpacity>
+											) : null}
+										</View>
+									</FormField>
 
 									<View style={styles.fieldRow}>
 										<FormField label="Estoque Inicial:" style={styles.thirdField}>
@@ -480,7 +549,7 @@ export default function ProductFormModal({ visible, presentation = 'modal', prod
 									</View>
 									<View style={styles.imageRow}>
 										<TouchableOpacity style={styles.addPhotoButton} onPress={chooseImage} activeOpacity={0.7} accessibilityRole="button">
-											<Feather name="plus" size={24} color="#7A7A7A" />
+											<Feather name="plus" size={24} color={tc('#7A7A7A')} />
 											<Text style={styles.addPhotoText}>Adicionar{"\n"}Foto</Text>
 										</TouchableOpacity>
 										{Array.from({ length: 3 }, (_, index) => form.images[index] || null).map((image, index) => (
@@ -489,7 +558,7 @@ export default function ProductFormModal({ visible, presentation = 'modal', prod
 													<>
 														<Image source={{ uri: image.uri }} style={styles.thumbnail} resizeMode="cover" />
 														<TouchableOpacity style={styles.removeImageButton} onPress={() => removeImage(index)} activeOpacity={0.7} accessibilityRole="button" accessibilityLabel="Remover foto">
-															<Feather name="x" size={10} color="#333333" />
+															<Feather name="x" size={10} color={tc('#333333')} />
 														</TouchableOpacity>
 													</>
 												) : null}
@@ -501,7 +570,7 @@ export default function ProductFormModal({ visible, presentation = 'modal', prod
 
 								<View style={styles.footer}>
 									<TouchableOpacity style={[styles.saveButton, isSaving && styles.disabledButton]} onPress={saveProduct} activeOpacity={0.7} disabled={isSaving} accessibilityRole="button">
-										{isSaving ? <ActivityIndicator size="small" color={C.white} /> : null}
+										{isSaving ? <ActivityIndicator size="small" color={tc(C.white)} /> : null}
 										<Text style={styles.saveButtonText}>{isSaving ? 'Salvando...' : 'Salvar'}</Text>
 									</TouchableOpacity>
 									<TouchableOpacity style={styles.cancelButton} onPress={closeModal} activeOpacity={0.7} disabled={isSaving} accessibilityRole="button">
@@ -523,11 +592,12 @@ export default function ProductFormModal({ visible, presentation = 'modal', prod
 					<View style={styles.scannerHeader}>
 						<Text style={styles.scannerTitle}>Ler código do produto</Text>
 						<TouchableOpacity onPress={() => setIsScannerVisible(false)} activeOpacity={0.7} accessibilityRole="button" accessibilityLabel="Fechar leitor">
-							<Feather name="x" size={25} color={C.white} />
+							<Feather name="x" size={25} color={tc(C.white)} />
 						</TouchableOpacity>
 					</View>
 					{scannerPermissionGranted ? (
-						<CameraView
+						<CameraSegura
+							active={isScannerVisible}
 							style={styles.camera}
 							facing="back"
 							barcodeScannerSettings={{ barcodeTypes: BARCODE_TYPES }}
@@ -557,7 +627,7 @@ function SelectField({ value, options, open, onToggle, onSelect }) {
 		<View style={styles.selectWrap}>
 			<TouchableOpacity style={styles.selectButton} onPress={onToggle} activeOpacity={0.7} accessibilityRole="button">
 				<Text style={styles.selectValue} numberOfLines={1}>{value}</Text>
-				<Feather name={open ? 'chevron-up' : 'chevron-down'} size={16} color="#000000" />
+				<Feather name={open ? 'chevron-up' : 'chevron-down'} size={16} color={tc('#000000')} />
 			</TouchableOpacity>
 			{open ? (
 				<ScrollView style={styles.selectOptions} nestedScrollEnabled keyboardShouldPersistTaps="handled">
@@ -572,13 +642,13 @@ function SelectField({ value, options, open, onToggle, onSelect }) {
 	);
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(StyleSheet.create({
 	screenRoot: { flex: 1, minHeight: 0, justifyContent: 'flex-end', backgroundColor: '#F0F2F3' },
 	screenSpacer: { flex: 0.18, backgroundColor: '#B5B7B9' },
 	screenFormWrap: { flex: 0.82, minHeight: 0 },
 	screenFormCard: { flex: 1, minHeight: 0 },
 	modalOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end' },
-	backdrop: { position: 'absolute', left: 0, right: 0, backgroundColor: '#B5B7B9' },
+	backdrop: { position: 'absolute', left: 0, right: 0, backgroundColor: 'rgba(0, 0, 0, 0.35)' },
 	modalContentWrap: { position: 'absolute', left: 0, right: 0, minHeight: 0, justifyContent: 'flex-end' },
 	sheetClip: { position: 'absolute', left: 0, right: 0, top: 0, overflow: 'hidden' },
 	formCard: { width: '100%', minHeight: 0, paddingTop: 0, flexDirection: 'column', borderTopLeftRadius: 28, borderTopRightRadius: 28, backgroundColor: '#F0F2F3', overflow: 'hidden' },
@@ -611,7 +681,8 @@ const styles = StyleSheet.create({
 	selectOptionText: { color: C.ink, fontFamily: ADMIN_THEME.fonts.body, fontSize: 12 },
 	barcodeRow: { flexDirection: 'row', gap: 8 },
 	barcodeInput: { flex: 1, minWidth: 0 },
-	scanButton: { width: 38, minHeight: 34, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: C.adminPrimary },
+	clearExpiry: { width: 50, height: 50, borderRadius: 8, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
+	scanButton: { width: 50, height: 50, borderRadius: 8, backgroundColor: C.green, alignItems: 'center', justifyContent: 'center' },
 	imageRow: { flexDirection: 'row', flexWrap: 'nowrap', width: '100%', alignItems: 'stretch', gap: 6, marginTop: 6, marginBottom: 10 },
 	thumbnailWrap: { position: 'relative', flex: 1, aspectRatio: 1, borderRadius: 10, overflow: 'hidden' },
 	thumbnail: { width: '100%', height: '100%', borderRadius: 10, backgroundColor: '#E8EEEB' },
@@ -630,4 +701,4 @@ const styles = StyleSheet.create({
 	cameraFallback: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
 	cameraFallbackText: { color: C.white, fontFamily: ADMIN_THEME.fonts.body, fontSize: 15, textAlign: 'center' },
 	scannerHint: { padding: 18, color: C.white, fontFamily: ADMIN_THEME.fonts.body, fontSize: 14, textAlign: 'center' },
-});
+}));

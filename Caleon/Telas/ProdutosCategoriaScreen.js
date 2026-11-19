@@ -1,40 +1,44 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import {
 	ActivityIndicator,
 	Alert,
 	FlatList,
-	Image,
 	StatusBar,
 	StyleSheet,
 	Text,
-	TouchableOpacity,
 	useWindowDimensions,
 	View,
+	DeviceEventEmitter,
 } from 'react-native';
 import { useFonts } from 'expo-font';
 import SafeAreaScreen from '../Componentes/SafeAreaScreen';
 import Feather from '@expo/vector-icons/Feather';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
-import BotaoSacola from '../Componentes/BotaoSacola';
+import BotaoNotificacoesCliente from '../Componentes/BotaoNotificacoesCliente';
 import NavegacaoInferior from '../Componentes/NavegacaoInferior';
 import { publishSacolaCount } from '../Componentes/useSacolaCount';
 import { db } from '../Config/FireBaseConfig';
 import {
-	formatCurrency,
 	formatProductUnit,
 	getProductPrice,
+	productImageFor,
 	PRODUCTS,
 } from '../Config/Produtos';
 import {
 	addProductToCart,
 	getCartProductIds,
+	CART_CHANGED_EVENT,
+	FAVORITES_CHANGED_EVENT,
 	getFavorites,
 	removeProductFromCart,
 	toggleFavorite,
 } from '../Config/ProdutoStorage';
 import { showGlobalNotification } from '../Componentes/NotificacaoGlobal';
 import CircularIconButton from '../Componentes/CircularIconButton';
+import CardProduto from '../Componentes/CardProduto';
+import { isCatalogSeeded } from '../Config/CatalogoFirebase';
+import { themedStyles, tc } from '../Config/Tema';
+import { productName } from '../Config/Produtos';
 
 const colors = {
 	green: '#1B4B3D',
@@ -66,10 +70,8 @@ function mapProduct(snapshot) {
 	const product = {
 		...data,
 		id: snapshot.id,
-		name: data.name.trim(),
-		imageUrl: typeof data.imageUrl === 'string'
-			? data.imageUrl
-			: typeof data.imageUri === 'string' ? data.imageUri : '',
+		name: productName(data.name),
+		imageUrl: productImageFor(snapshot.id, data.imageUrl || data.imageUri, data.imageUrls),
 		pricePerKg,
 		originalPricePerKg: Number(data.originalPricePerKg) > pricePerKg
 			? Number(data.originalPricePerKg)
@@ -114,6 +116,12 @@ function getLocalProducts(category) {
 		.filter(Boolean);
 }
 
+function getAllLocalProducts() {
+	return PRODUCTS
+		.map((product) => mapProduct({ id: product.id, data: () => ({ ...product, active: true }) }))
+		.filter(Boolean);
+}
+
 function getCategoryQueryValues(category) {
 	const normalizedCategory = category
 		.normalize('NFD')
@@ -133,88 +141,33 @@ function getCategoryQueryValues(category) {
 	return [...values];
 }
 
-function ProductCard({
-	product,
-	width,
-	isFavorite,
-	isInCart,
-	onOpen,
-	onToggleFavorite,
-	onToggleCart,
-}) {
-	const imageHeight = width * 0.62;
-
-	return (
-		<View style={[styles.productCard, { width, minHeight: width * 1.58 }]}>
-			<TouchableOpacity
-				style={[styles.productImageArea, { height: imageHeight }]}
-				onPress={onOpen}
-				activeOpacity={0.85}
-				accessibilityRole="button"
-				accessibilityLabel={`Ver detalhes de ${product.name}`}
-			>
-				{product.discount ? (
-					<Text style={styles.discountBadge}>{product.discount}</Text>
-				) : null}
-				{product.imageUrl ? (
-					<Image
-						source={{ uri: product.imageUrl }}
-						style={styles.productImage}
-						resizeMode="contain"
-					/>
-				) : (
-					<MaterialCommunityIcons name="food-apple-outline" size={50} color={colors.mint} />
-				)}
-			</TouchableOpacity>
-			<TouchableOpacity
-				style={styles.favoriteButton}
-				onPress={() => onToggleFavorite(product.id)}
-				activeOpacity={0.8}
-				accessibilityRole="button"
-				accessibilityLabel={`${isFavorite ? 'Remover' : 'Adicionar'} ${product.name} ${isFavorite ? 'dos' : 'aos'} favoritos`}
-			>
-				<MaterialCommunityIcons
-					name={isFavorite ? 'heart' : 'heart-outline'}
-					size={18}
-					color={colors.white}
-				/>
-			</TouchableOpacity>
-			<View style={styles.productDetails}>
-				<Text style={styles.productName} numberOfLines={1}>{product.name}</Text>
-				<Text style={styles.productWeight}>{product.weight}</Text>
-				<View style={styles.priceRow}>
-					<Text style={styles.productPrice}>{formatCurrency(product.price)}</Text>
-					{product.originalPrice ? (
-						<Text style={styles.originalPrice}>{formatCurrency(product.originalPrice)}</Text>
-					) : null}
-				</View>
-				<TouchableOpacity
-					style={[styles.addButton, isInCart && styles.addedButton]}
-					onPress={() => onToggleCart(product, isInCart)}
-					activeOpacity={0.8}
-					accessibilityRole="button"
-					accessibilityLabel={`${product.name}, ${isInCart ? 'remover da' : 'adicionar à'} sacola`}
-				>
-					<MaterialCommunityIcons
-						name={isInCart ? 'check' : 'plus'}
-						size={17}
-						color={colors.white}
-					/>
-					<Text style={styles.addButtonText}>{isInCart ? 'Adicionado' : 'Adicionar'}</Text>
-				</TouchableOpacity>
-			</View>
-		</View>
-	);
-}
-
 export default function ProdutosCategoriaScreen({ navigation, route }) {
 	const { width: windowWidth } = useWindowDimensions();
 	const category = typeof route?.params?.categoria === 'string'
 		? route.params.categoria.trim()
 		: '';
-	const [products, setProducts] = useState([]);
+	// "Ver mais" da Home: todos os produtos (sem categoria) e/ou só os que estão em promoção.
+	const showAll = route?.params?.todos === true || !category;
+	const onlyPromo = route?.params?.promocao === true;
+	const [allProducts, setProducts] = useState([]);
+	const products = useMemo(
+		() => (onlyPromo ? allProducts.filter((product) => product.discount) : allProducts),
+		[allProducts, onlyPromo],
+	);
 	const [favoriteIds, setFavoriteIds] = useState([]);
 	const [cartProductIds, setCartProductIds] = useState([]);
+
+	// Favoritos/sacola mudaram em outra tela ou em outro aparelho: coração e sacola atualizam na hora.
+	useEffect(() => {
+		const favoritesSubscription = DeviceEventEmitter.addListener(FAVORITES_CHANGED_EVENT, (ids) => setFavoriteIds(ids));
+		const cartSubscription = DeviceEventEmitter.addListener(CART_CHANGED_EVENT, (items) => {
+			setCartProductIds([...new Set(items.map((item) => item.productId).filter(Boolean))]);
+		});
+		return () => {
+			favoritesSubscription.remove();
+			cartSubscription.remove();
+		};
+	}, []);
 	const [loading, setLoading] = useState(true);
 	const [loadError, setLoadError] = useState(false);
 	const pendingCartProductIds = useRef(new Set());
@@ -227,27 +180,19 @@ export default function ProdutosCategoriaScreen({ navigation, route }) {
 	const cardWidth = Math.max(120, (windowWidth - 36) / 2);
 
 	useEffect(() => {
-		if (!category) {
-			setProducts([]);
-			setLoading(false);
-			setLoadError(true);
-			return undefined;
-		}
-
-		const localProducts = getLocalProducts(category);
+		const localProducts = showAll ? getAllLocalProducts() : getLocalProducts(category);
 		setLoading(localProducts.length === 0);
 		setLoadError(false);
 		setProducts(localProducts);
-		const productsQuery = query(
-			collection(db, 'products'),
-			where('category', 'in', getCategoryQueryValues(category)),
-		);
+		const productsQuery = showAll
+			? collection(db, 'products')
+			: query(collection(db, 'products'), where('category', 'in', getCategoryQueryValues(category)));
 
 		return onSnapshot(
 			productsQuery,
 			(snapshot) => {
 				// O Firebase sobrescreve o produto local de mesmo id (edição pelo admin) ou o esconde (excluído).
-				const merged = new Map(localProducts.map((product) => [product.id, product]));
+				const merged = new Map(isCatalogSeeded(snapshot.docs) ? [] : localProducts.map((product) => [product.id, product]));
 				snapshot.docs.forEach((productDocument) => {
 					const mapped = mapProduct(productDocument);
 					if (mapped) merged.set(mapped.id, mapped);
@@ -262,7 +207,7 @@ export default function ProdutosCategoriaScreen({ navigation, route }) {
 				setLoading(false);
 			},
 		);
-	}, [category]);
+	}, [category, showAll]);
 
 	useEffect(() => {
 		let active = true;
@@ -294,12 +239,12 @@ export default function ProdutosCategoriaScreen({ navigation, route }) {
 
 	function renderEmptyState() {
 		if (loading) {
-			return <ActivityIndicator style={styles.emptyState} size="large" color={colors.green} />;
+			return <ActivityIndicator style={styles.emptyState} size="large" color={tc(colors.green)} />;
 		}
 		if (loadError) {
 			return <Text style={styles.emptyText}>Não foi possível carregar os produtos desta categoria.</Text>;
 		}
-		return <Text style={styles.emptyText}>Ainda não há produtos nesta categoria.</Text>;
+		return <Text style={styles.emptyText}>{onlyPromo ? 'Nenhum produto em promoção agora.' : 'Ainda não há produtos nesta categoria.'}</Text>;
 	}
 
 	async function handleToggleFavorite(productId) {
@@ -324,7 +269,7 @@ export default function ProdutosCategoriaScreen({ navigation, route }) {
 			setFavoriteIds((ids) => (
 				wasFavorite ? [...ids, productId] : ids.filter((id) => id !== productId)
 			));
-			Alert.alert('Favoritos', 'Não foi possível atualizar seus favoritos.');
+			showGlobalNotification('Não foi possível atualizar seus favoritos.');
 		}
 	}
 
@@ -374,14 +319,16 @@ export default function ProdutosCategoriaScreen({ navigation, route }) {
 						<CircularIconButton
 							style={styles.backButton}
 							borderRadius={12}
-							icon={<Feather name="chevron-left" size={27} color={colors.white} />}
+							icon={<Feather name="chevron-left" size={27} color={tc(colors.white)} />}
 							onPress={() => navigation.goBack()}
 							accessibilityLabel="Voltar"
 						/>
-						<BotaoSacola navigation={navigation} size={40} />
+						<View style={{ flexDirection: 'row', gap: 8 }}>
+							<BotaoNotificacoesCliente navigation={navigation} size={40} />
+						</View>
 					</View>
 					<Text style={styles.title}>Produtos</Text>
-					<Text style={styles.subtitle}>{category || 'Categoria'}</Text>
+					<Text style={styles.subtitle}>{[onlyPromo ? 'Em Promoção' : null, showAll ? 'Todos os produtos' : category].filter(Boolean).join(' · ')}</Text>
 				</View>
 
 				<FlatList
@@ -394,7 +341,7 @@ export default function ProdutosCategoriaScreen({ navigation, route }) {
 					showsVerticalScrollIndicator={false}
 					ListEmptyComponent={renderEmptyState}
 					renderItem={({ item }) => (
-						<ProductCard
+						<CardProduto
 							product={item}
 							width={cardWidth}
 							isFavorite={favoriteIds.includes(item.id)}
@@ -411,7 +358,7 @@ export default function ProdutosCategoriaScreen({ navigation, route }) {
 	);
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(StyleSheet.create({
 	safeArea: {
 		flex: 1,
 		backgroundColor: colors.green,
@@ -520,41 +467,40 @@ const styles = StyleSheet.create({
 		zIndex: 2,
 	},
 	productDetails: {
-		flex: 1,
-		marginTop: 4,
+		marginTop: 6,
 	},
 	productName: {
 		color: colors.green,
 		fontFamily: 'Montserrat_700Bold',
-		fontSize: 13,
+		fontSize: 15,
 	},
 	productWeight: {
 		marginTop: 1,
 		color: colors.muted,
 		fontFamily: 'Montserrat_400Regular',
-		fontSize: 10,
+		fontSize: 11,
 	},
 	priceRow: {
-		minHeight: 23,
+		minHeight: 26,
 		flexDirection: 'row',
 		alignItems: 'center',
 		gap: 5,
 	},
 	productPrice: {
 		color: colors.price,
-		fontFamily: 'Montserrat_700Bold',
-		fontSize: 13,
+		fontFamily: 'LilitaOne_400Regular',
+		fontSize: 20,
 	},
 	originalPrice: {
 		color: colors.muted,
 		fontFamily: 'Montserrat_400Regular',
-		fontSize: 9,
+		fontSize: 11,
 		textDecorationLine: 'line-through',
 	},
 	addButton: {
-		height: 34,
-		marginTop: 5,
-		borderRadius: 11,
+		height: 42,
+		marginTop: 8,
+		borderRadius: 12,
 		backgroundColor: colors.green,
 		flexDirection: 'row',
 		alignItems: 'center',
@@ -567,7 +513,7 @@ const styles = StyleSheet.create({
 	addButtonText: {
 		color: colors.white,
 		fontFamily: 'Montserrat_700Bold',
-		fontSize: 10,
+		fontSize: 13,
 	},
 	emptyState: {
 		paddingTop: 40,
@@ -580,4 +526,4 @@ const styles = StyleSheet.create({
 		fontSize: 14,
 		textAlign: 'center',
 	},
-});
+}));

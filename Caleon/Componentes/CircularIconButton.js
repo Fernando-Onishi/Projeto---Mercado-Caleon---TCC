@@ -1,5 +1,6 @@
 import React from 'react';
 import { StyleSheet, TouchableOpacity } from 'react-native';
+import { themedStyles } from '../Config/Tema';
 
 const DEFAULT_MINT = '#40B190';
 
@@ -33,9 +34,9 @@ export default function CircularIconButton({
 	);
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(StyleSheet.create({
 	button: {
 		alignItems: 'center',
 		justifyContent: 'center',
 	},
-});
+}));

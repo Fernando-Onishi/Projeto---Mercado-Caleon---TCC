@@ -15,8 +15,11 @@ import Feather from '@expo/vector-icons/Feather';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import SafeAreaScreen from '../Componentes/SafeAreaScreen';
 import CircularIconButton from '../Componentes/CircularIconButton';
-import MapaPedido from '../Componentes/MapaPedido';
-import { formatCurrency } from '../Config/Produtos';
+import BotaoNotificacoesCliente from '../Componentes/BotaoNotificacoesCliente';
+import MapaLoja, { openDirections } from '../Componentes/MapaLoja';
+import NavegacaoInferior from '../Componentes/NavegacaoInferior';
+import { formatPickup } from '../Config/Retirada';
+import { formatCurrency, productName } from '../Config/Produtos';
 import { STORE } from '../Config/Pagamento';
 import {
 	ORDER_STEPS,
@@ -25,6 +28,7 @@ import {
 	formatTime,
 	subscribeToOrder,
 } from '../Config/Pedidos';
+import { themeColor, themedStyles, tc } from '../Config/Tema';
 
 const COLORS = {
 	dark: '#1B4B3D',
@@ -40,11 +44,22 @@ const COLORS = {
 };
 
 const HEADLINES = {
-	recebido: `Pronto em até ${STORE.pickupMinutes} minutos`,
-	preparando: 'Estamos separando seus produtos',
+	recebido: 'Aguardando o mercado aceitar',
+	aceito: 'Pedido aceito pelo mercado',
+	preparando: 'Seu pedido está sendo preparado',
 	pronto: 'Pronto para retirada!',
 	retirado: 'Pedido retirado. Obrigado!',
 	cancelado: 'Pedido cancelado pelo mercado',
+};
+
+// Cor e ícone da etiqueta de estado do pedido.
+const STATUS_BADGES = {
+	recebido: { label: 'Aguardando aceite', icon: 'clock', color: '#B7791F', background: '#FFF3D6' },
+	aceito: { label: 'Aceito', icon: 'thumbs-up', color: '#1B4B3D', background: '#D8F6E9' },
+	preparando: { label: 'Sendo preparado', icon: 'package', color: '#B7791F', background: '#FFF3D6' },
+	pronto: { label: 'Pronto para retirada', icon: 'check-circle', color: '#00875A', background: '#D8F6E9' },
+	retirado: { label: 'Retirado', icon: 'check', color: '#1B4B3D', background: '#E8ECEA' },
+	cancelado: { label: 'Cancelado', icon: 'x-circle', color: '#FF383C', background: '#FFF0F0' },
 };
 
 function Timeline({ order }) {
@@ -59,7 +74,7 @@ function Timeline({ order }) {
 					<View key={step.key} style={styles.step}>
 						<View style={styles.stepRail}>
 							{step.key === 'pronto' ? (
-								<MaterialCommunityIcons name="map-marker" size={20} color={done ? COLORS.dark : COLORS.line} />
+								<MaterialCommunityIcons name="map-marker" size={20} color={tc(done ? COLORS.dark : COLORS.line)} />
 							) : (
 								<View style={[styles.stepDot, done && styles.stepDotDone]} />
 							)}
@@ -89,6 +104,7 @@ export default function PedidoAcompanhamento({ navigation, route }) {
 	});
 	const [order, setOrder] = useState(undefined);
 	const [showDetails, setShowDetails] = useState(false);
+	const [mapDragging, setMapDragging] = useState(false);
 
 	// Atualiza sozinho quando o admin muda a etapa do pedido.
 	useEffect(() => {
@@ -110,14 +126,14 @@ export default function PedidoAcompanhamento({ navigation, route }) {
 	if (!fontsLoaded || order === undefined) {
 		return (
 			<View style={styles.loadingScreen}>
-				<ActivityIndicator size="large" color={COLORS.white} />
+				<ActivityIndicator size="large" color={tc(COLORS.white)} />
 			</View>
 		);
 	}
 
 	const items = order?.items || [];
 	const itemCount = items.reduce((sum, item) => sum + (Number(item.quantidade) || 1), 0);
-	const itemNames = items.map((item) => item.nome).join(', ');
+	const itemNames = items.map((item) => productName(item.nome)).join(', ');
 	const pickup = order?.pickup || STORE;
 	const pixPending = order?.paymentMethod === 'pix' && order?.paymentStatus === 'aguardando' && order?.status !== 'cancelado';
 
@@ -126,11 +142,12 @@ export default function PedidoAcompanhamento({ navigation, route }) {
 			<StatusBar barStyle="light-content" backgroundColor={COLORS.dark} />
 			<View style={styles.topBand} />
 			<View style={styles.screen}>
-				<ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-					<MapaPedido
-						store={{ latitude: pickup.latitude, longitude: pickup.longitude }}
-						customer={order?.customerLocation || null}
+				<ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} scrollEnabled={!mapDragging}>
+					<MapaLoja
 						height={Math.round(windowHeight * 0.42)}
+						rounded={false}
+						showDirections={false}
+						onDragChange={setMapDragging}
 					/>
 
 					{!order ? (
@@ -143,12 +160,29 @@ export default function PedidoAcompanhamento({ navigation, route }) {
 							<View style={[styles.card, styles.overlapCard]}>
 								<View style={styles.orderHeader}>
 									<View style={[styles.orderIcon, order.status === 'cancelado' && { backgroundColor: COLORS.red }]}>
-										<Feather name={order.status === 'cancelado' ? 'x' : 'shopping-bag'} size={24} color={COLORS.white} />
+										<Feather name={order.status === 'cancelado' ? 'x' : 'shopping-bag'} size={24} color={tc(COLORS.white)} />
 									</View>
 									<View style={styles.flex}>
 										<Text style={styles.cardTitle}>Seu Pedido #{order.number}</Text>
 										<Text style={styles.cardSubtitle}>{HEADLINES[order.status] || ''}</Text>
 									</View>
+								</View>
+								<View style={styles.statusRow}>
+									{(() => {
+										const badge = STATUS_BADGES[order.status] || STATUS_BADGES.recebido;
+										return (
+											<View style={[styles.statusBadge, { backgroundColor: themeColor(badge.background, 'bg') }]}>
+												<Feather name={badge.icon} size={14} color={tc(badge.color)} />
+												<Text style={[styles.statusBadgeText, { color: tc(badge.color) }]}>{badge.label}</Text>
+											</View>
+										);
+									})()}
+									{order.pickupAt ? (
+										<View style={styles.pickupBadge}>
+											<Feather name="calendar" size={14} color={tc(COLORS.dark)} />
+											<Text style={styles.pickupBadgeText}>Retirada {formatPickup(order.pickupAt).replace(/^H/, 'h').replace(/^A/, 'a')}</Text>
+										</View>
+									) : null}
 								</View>
 								<View style={styles.divider} />
 								<View style={styles.orderRow}>
@@ -175,7 +209,7 @@ export default function PedidoAcompanhamento({ navigation, route }) {
 											<View key={`${item.productId}-${index}`} style={styles.detailRow}>
 												{item.imagem ? <Image source={{ uri: item.imagem }} style={styles.detailImage} resizeMode="contain" /> : null}
 												<Text style={styles.detailName} numberOfLines={1}>
-													{item.quantidade}x {item.nome} <Text style={styles.detailWeight}>{item.peso}</Text>
+													{item.quantidade}x {productName(item.nome)} <Text style={styles.detailWeight}>{item.peso}</Text>
 												</Text>
 												<Text style={styles.detailPrice}>{formatCurrency(Number(item.preco) || 0)}</Text>
 											</View>
@@ -183,9 +217,19 @@ export default function PedidoAcompanhamento({ navigation, route }) {
 										<View style={styles.divider} />
 										<Text style={styles.detailInfo}>Pagamento: {PAYMENT_LABELS[order.paymentMethod]}{order.cardLast4 ? ` final ${order.cardLast4}` : ''} — {PAYMENT_STATUS_LABELS[order.paymentStatus] || ''}</Text>
 										<Text style={styles.detailInfo}>Retirada: {pickup.address}</Text>
+										{order.pickupAt ? <Text style={styles.detailInfo}>Horário escolhido: {formatPickup(order.pickupAt)}</Text> : null}
 									</View>
 								) : null}
 							</View>
+
+							<TouchableOpacity style={styles.directionsCard} onPress={() => openDirections()} accessibilityRole="button">
+								<View style={styles.directionsIcon}><Feather name="navigation" size={20} color={tc(COLORS.white)} /></View>
+								<View style={styles.flex}>
+									<Text style={styles.pixBannerTitle}>{STORE.name} — SENAI Suzano</Text>
+									<Text style={styles.pixBannerText}>{pickup.address}</Text>
+								</View>
+								<Text style={styles.directionsLink}>Como chegar</Text>
+							</TouchableOpacity>
 
 							{pixPending ? (
 								<TouchableOpacity
@@ -193,12 +237,12 @@ export default function PedidoAcompanhamento({ navigation, route }) {
 									onPress={() => navigation.navigate('TelaPagamento', { orderId: order.id })}
 									accessibilityRole="button"
 								>
-									<MaterialCommunityIcons name="qrcode" size={24} color={COLORS.dark} />
+									<MaterialCommunityIcons name="qrcode" size={24} color={tc(COLORS.dark)} />
 									<View style={styles.flex}>
 										<Text style={styles.pixBannerTitle}>Pagamento Pix pendente</Text>
 										<Text style={styles.pixBannerText}>Toque para ver o QR Code e o copia e cola</Text>
 									</View>
-									<Feather name="chevron-right" size={22} color={COLORS.dark} />
+									<Feather name="chevron-right" size={22} color={tc(COLORS.dark)} />
 								</TouchableOpacity>
 							) : null}
 
@@ -217,17 +261,19 @@ export default function PedidoAcompanhamento({ navigation, route }) {
 					<CircularIconButton
 						size={40}
 						borderRadius={12}
-						icon={<Feather name="chevron-left" size={27} color={COLORS.white} />}
+						icon={<Feather name="chevron-left" size={27} color={tc(COLORS.white)} />}
 						onPress={goBack}
 						accessibilityLabel="Voltar"
 					/>
+					<BotaoNotificacoesCliente navigation={navigation} size={40} />
 				</View>
 			</View>
+			<NavegacaoInferior navigation={navigation} activeTab={null} />
 		</SafeAreaScreen>
 	);
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(StyleSheet.create({
 	flex: { flex: 1 },
 	loadingScreen: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.dark },
 	safeArea: { flex: 1, backgroundColor: COLORS.dark },
@@ -280,5 +326,13 @@ const styles = StyleSheet.create({
 	stepTitlePending: { color: COLORS.muted },
 	stepMeta: { color: COLORS.muted, fontFamily: 'Montserrat_400Regular', fontSize: 12, marginTop: 4 },
 	cancelCard: { backgroundColor: '#FFF0F0' },
+	statusRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14 },
+	statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 30, paddingHorizontal: 12, borderRadius: 15 },
+	statusBadgeText: { fontFamily: 'Montserrat_700Bold', fontSize: 12 },
+	pickupBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 30, paddingHorizontal: 12, borderRadius: 15, backgroundColor: COLORS.background },
+	pickupBadgeText: { color: COLORS.dark, fontFamily: 'Montserrat_700Bold', fontSize: 12 },
+	directionsCard: { marginHorizontal: 16, marginBottom: 14, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 18, backgroundColor: COLORS.white },
+	directionsIcon: { width: 42, height: 42, borderRadius: 12, backgroundColor: COLORS.dark, alignItems: 'center', justifyContent: 'center' },
+	directionsLink: { color: COLORS.mint, fontFamily: 'Montserrat_700Bold', fontSize: 13 },
 	cancelText: { color: COLORS.red, fontFamily: 'Montserrat_500Medium', fontSize: 14, lineHeight: 20 },
-});
+}));

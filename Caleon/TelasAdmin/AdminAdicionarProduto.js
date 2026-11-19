@@ -8,11 +8,14 @@ import CircularIconButton from '../Componentes/CircularIconButton';
 import NavegacaoAdmin from '../Componentes/NavegacaoAdmin';
 import { useAdminNotifications } from '../Componentes/AdminNotificationsContext';
 import ProductFormModal from './ProductFormModal';
+import { FotoMeuPerfil, useMeuPerfil } from '../Componentes/MeuPerfil';
 import { ADMIN_THEME } from '../Config/AdminTheme';
+import { themedStyles, tc } from '../Config/Tema';
 
 const C = ADMIN_THEME.colors;
 
 export default function AdminAdicionarProduto({ navigation, userRole }) {
+	const meuPerfil = useMeuPerfil();
 	const [fontsLoaded] = useFonts({
 		LilitaOne_400Regular: require('@expo-google-fonts/lilita-one/400Regular/LilitaOne_400Regular.ttf'),
 		Montserrat_400Regular: require('@expo-google-fonts/montserrat/400Regular/Montserrat_400Regular.ttf'),
@@ -20,7 +23,7 @@ export default function AdminAdicionarProduto({ navigation, userRole }) {
 		Montserrat_700Bold: require('@expo-google-fonts/montserrat/700Bold/Montserrat_700Bold.ttf'),
 	});
 	const [notificationsVisible, setNotificationsVisible] = useState(false);
-	const { notifications } = useAdminNotifications();
+	const { unreadCount } = useAdminNotifications();
 
 	function closeScreen() {
 		if (navigation.canGoBack()) navigation.goBack();
@@ -49,24 +52,24 @@ export default function AdminAdicionarProduto({ navigation, userRole }) {
 							accessibilityRole="button"
 							accessibilityLabel="Configurações da conta"
 						>
-							<Feather name="user" size={20} color={C.white} />
+							<FotoMeuPerfil photo={meuPerfil.photo} size={40} />
 						</TouchableOpacity>
 						<View style={styles.brandCopy}>
 							<Text style={styles.kicker}>Painel Operacional</Text>
-							<Text style={styles.greeting}>Olá, Administrador</Text>
+							<Text style={styles.greeting} numberOfLines={1}>Olá, {meuPerfil.firstName || 'Administrador'}</Text>
 						</View>
 						<View style={styles.notificationButton}>
 							<CircularIconButton
 								size={40}
 								borderRadius={12}
 								backgroundColor="#35B394"
-								icon={<Feather name="bell" size={20} color={C.white} />}
+								icon={<Feather name="bell" size={20} color={tc(C.white)} />}
 								onPress={() => setNotificationsVisible(true)}
 								accessibilityLabel="Notificações"
 							/>
-							{notifications.length > 0 ? (
+							{unreadCount > 0 ? (
 								<View style={styles.badge}>
-									<Text style={styles.badgeText}>{notifications.length > 99 ? '99+' : notifications.length}</Text>
+									<Text style={styles.badgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
 								</View>
 							) : null}
 						</View>
@@ -86,7 +89,7 @@ export default function AdminAdicionarProduto({ navigation, userRole }) {
 	);
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(StyleSheet.create({
 	screen: { backgroundColor: '#164F40' },
 	contentPanel: { paddingHorizontal: 0, paddingTop: 0, paddingBottom: 0 },
 	topbar: { minHeight: 82, paddingHorizontal: ADMIN_THEME.layout.contentPadding, flexDirection: 'row', alignItems: 'center', backgroundColor: '#164F40' },
@@ -97,4 +100,4 @@ const styles = StyleSheet.create({
 	notificationButton: { position: 'relative', marginLeft: 8 },
 	badge: { position: 'absolute', right: -4, top: -4, minWidth: 16, height: 16, paddingHorizontal: 4, borderRadius: 8, backgroundColor: '#FF3F4D', alignItems: 'center', justifyContent: 'center' },
 	badgeText: { color: '#FFFFFF', fontSize: 8, fontFamily: ADMIN_THEME.fonts.bold },
-});
+}));

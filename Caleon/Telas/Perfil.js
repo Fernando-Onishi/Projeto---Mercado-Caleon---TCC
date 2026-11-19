@@ -1,6 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-	Alert,
 	ActivityIndicator,
 	Image,
 	KeyboardAvoidingView,
@@ -22,13 +21,18 @@ import Feather from '@expo/vector-icons/Feather';
 import Fontisto from '@expo/vector-icons/Fontisto';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { onAuthStateChanged, signOut, updateEmail, updatePassword, updateProfile } from 'firebase/auth';
 import { auth } from '../Config/FireBaseConfig';
-import { getProfileStorageKey } from '../Config/PerfilStorage';
+import { loadProfileData, saveProfileData, subscribeProfileData } from '../Config/PerfilStorage';
+import { describePhotoError, isRemotePhoto, subscribeProfilePhoto, uploadProfilePhoto } from '../Config/FotoPerfil';
 import NavegacaoInferior from '../Componentes/NavegacaoInferior';
 import CircularIconButton from '../Componentes/CircularIconButton';
+import ModalSobe from '../Componentes/ModalSobe';
+import AjusteImagem from '../Componentes/AjusteImagem';
+import SeletorTema from '../Componentes/SeletorTema';
 import { getUserRole } from '../src/utils/getUserRole';
+import { themedStyles, tc } from '../Config/Tema';
+import { showGlobalNotification } from '../Componentes/NotificacaoGlobal';
 
 const COLORS = {
 	darkGreen: '#1B4B3D',
@@ -88,9 +92,13 @@ export default function Perfil({ navigation }) {
 	const [savedProfile, setSavedProfile] = useState(emptyFields);
 	const [isAdmin, setIsAdmin] = useState(false);
 	const [isEditing, setIsEditing] = useState(false);
+	const isEditingRef = useRef(false);
+	isEditingRef.current = isEditing;
 	const [isPasswordVisible, setIsPasswordVisible] = useState(false);
 	const [isSaving, setIsSaving] = useState(false);
 	const [isLogoutModalVisible, setIsLogoutModalVisible] = useState(false);
+	const [isPasswordInfoVisible, setIsPasswordInfoVisible] = useState(false);
+	const [adjustUri, setAdjustUri] = useState(null);
 	const [isLoggingOut, setIsLoggingOut] = useState(false);
 	const [logoutError, setLogoutError] = useState('');
 
@@ -123,12 +131,8 @@ export default function Perfil({ navigation }) {
 		let active = true;
 		async function loadProfile() {
 			const user = auth.currentUser;
-			let stored = {};
-			try {
-				stored = JSON.parse(await AsyncStorage.getItem(getProfileStorageKey(user?.uid)) || '{}');
-			} catch {
-				stored = {};
-			}
+			// Perfil da conta (Firebase) por cima do salvo no aparelho: igual em qualquer celular.
+			const stored = await loadProfileData(user?.uid);
 			if (!active) return;
 			const loadedProfile = {
 				...emptyFields,
@@ -141,7 +145,24 @@ export default function Perfil({ navigation }) {
 			setSavedProfile(loadedProfile);
 		}
 		loadProfile();
-		return () => { active = false; };
+		// Mudou em outro aparelho: atualiza (sem atrapalhar quem está editando).
+		const unsubscribeProfile = subscribeProfileData(auth.currentUser?.uid, (remote) => {
+			if (!active) return;
+			const merge = (current) => ({ ...current, ...remote, name: auth.currentUser?.displayName || remote.name || current.name, email: current.email, password: '' });
+			setSavedProfile(merge);
+			setProfile((current) => (isEditingRef.current ? current : merge(current)));
+		});
+		// Foto de perfil do Firebase: a mesma em todos os aparelhos.
+		const unsubscribePhoto = subscribeProfilePhoto(auth.currentUser?.uid, (photoURL) => {
+			if (!active || !photoURL) return;
+			setProfile((current) => (isRemotePhoto(current.photoUri) || !current.photoUri ? { ...current, photoUri: photoURL } : current));
+			setSavedProfile((current) => ({ ...current, photoUri: photoURL }));
+		});
+		return () => {
+			active = false;
+			unsubscribePhoto();
+			unsubscribeProfile();
+		};
 	}, []);
 
 	useEffect(() => {
@@ -153,7 +174,7 @@ export default function Perfil({ navigation }) {
 			<SafeAreaScreen style={styles.safeArea} edges={['top', 'bottom']}>
 				<StatusBar style="light" backgroundColor={COLORS.darkGreen} />
 				<View style={styles.fontLoading}>
-					<ActivityIndicator size="large" color={COLORS.darkGreen} />
+					<ActivityIndicator size="large" color={tc(COLORS.darkGreen)} />
 				</View>
 			</SafeAreaScreen>
 		);
@@ -173,14 +194,12 @@ export default function Perfil({ navigation }) {
 		try {
 			const result = await ImagePicker.launchImageLibraryAsync({
 				mediaTypes: ['images'],
-				allowsEditing: true,
-				aspect: [1, 1],
-				shape: 'oval',
-				quality: 0.9,
+				quality: 1,
 			});
-			if (!result.canceled) updateField('photoUri', result.assets[0].uri);
+			// Abre o ajuste (posição e zoom) antes de usar a foto.
+			if (!result.canceled) setAdjustUri(result.assets[0].uri);
 		} catch {
-			Alert.alert('Foto do perfil', 'Não foi possível abrir a galeria.');
+			showGlobalNotification('Não foi possível abrir a galeria.');
 		}
 	}
 
@@ -190,23 +209,23 @@ export default function Perfil({ navigation }) {
 		const cepDigits = profile.cep.replace(/\D/g, '');
 		const phoneDigits = profile.phone.replace(/\D/g, '');
 		if (!profile.name.trim()) {
-			Alert.alert('Perfil', 'Informe seu nome.');
+			showGlobalNotification('Informe seu nome.');
 			return;
 		}
 		if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-			Alert.alert('Perfil', 'Informe um email válido.');
+			showGlobalNotification('Informe um email válido.');
 			return;
 		}
 		if (cepDigits && cepDigits.length !== 8) {
-			Alert.alert('Perfil', 'O CEP deve ter oito dígitos.');
+			showGlobalNotification('O CEP deve ter oito dígitos.');
 			return;
 		}
 		if (phoneDigits && phoneDigits.length !== 10 && phoneDigits.length !== 11) {
-			Alert.alert('Perfil', 'Informe um telefone válido com DDD.');
+			showGlobalNotification('Informe um telefone válido com DDD.');
 			return;
 		}
 		if (profile.password && profile.password.length < 6) {
-			Alert.alert('Perfil', 'A nova senha deve ter pelo menos seis caracteres.');
+			showGlobalNotification('A nova senha deve ter pelo menos seis caracteres.');
 			return;
 		}
 
@@ -217,25 +236,38 @@ export default function Perfil({ navigation }) {
 			if (user) await updateProfile(user, { displayName: profile.name.trim() });
 			if (user && profile.password) await updatePassword(user, profile.password);
 
-			const saved = { ...profile, email, name: profile.name.trim(), password: '' };
-			await AsyncStorage.setItem(getProfileStorageKey(user?.uid), JSON.stringify({
+			let photoUri = profile.photoUri;
+			if (user && photoUri && !isRemotePhoto(photoUri)) {
+				try {
+					photoUri = await uploadProfilePhoto(photoUri);
+				} catch (photoError) {
+					// Se o Firebase recusar a foto, salva o resto do perfil e mantém a foto só neste aparelho.
+					if (!photoError?.photoURL) throw photoError;
+					photoUri = photoError.photoURL;
+					showGlobalNotification(describePhotoError(photoError));
+				}
+			}
+			const saved = { ...profile, photoUri, email, name: profile.name.trim(), password: '' };
+			await saveProfileData(user?.uid, {
 				name: saved.name,
 				email: saved.email,
 				cep: saved.cep,
 				address: saved.address,
 				phone: saved.phone,
 				photoUri: saved.photoUri,
-			}));
+			});
 			setProfile(saved);
 			setSavedProfile(saved);
 			setIsEditing(false);
 			setIsPasswordVisible(false);
-			Alert.alert('Perfil', 'Alterações salvas com sucesso.');
+			showGlobalNotification('Alterações salvas com sucesso.');
 		} catch (error) {
 			const message = error?.code === 'auth/requires-recent-login'
 				? 'Entre novamente na sua conta para atualizar o email ou a senha.'
-				: 'Não foi possível salvar as alterações. Tente novamente.';
-			Alert.alert('Perfil', message);
+				: error?.message === 'image-too-large'
+					? 'Essa foto é grande demais. Escolha outra ou recorte mais.'
+					: 'Não foi possível salvar as alterações. Tente novamente.';
+			showGlobalNotification(message);
 		} finally {
 			setIsSaving(false);
 		}
@@ -274,14 +306,19 @@ export default function Perfil({ navigation }) {
 	}
 
 	function returnToAdminPanel() {
-		navigation.reset({ index: 0, routes: [{ name: 'AdminHome' }] });
+		navigation.navigate('TelaTroca', { destino: 'AdminHome' });
 	}
 
+	// A senha atual não pode ser mostrada: o Firebase guarda só uma versão embaralhada dela.
+	// O olho leva direto para criar uma nova senha, já visível enquanto a pessoa digita.
 	function explainPasswordVisibility() {
-		Alert.alert(
-			'Senha protegida',
-			'O Firebase não permite visualizar a senha atual. Para mantê-la, deixe o campo de senha em branco ao editar o perfil.',
-		);
+		setIsPasswordInfoVisible(true);
+	}
+
+	function startPasswordChange() {
+		setIsPasswordInfoVisible(false);
+		startEditing();
+		setIsPasswordVisible(true);
 	}
 
 	function goBack() {
@@ -292,6 +329,48 @@ export default function Perfil({ navigation }) {
 	return (
 		<SafeAreaScreen style={styles.safeArea} edges={['top', 'bottom']}>
 			<StatusBar style="light" backgroundColor={COLORS.darkGreen} />
+			<AjusteImagem
+				visible={Boolean(adjustUri)}
+				uri={adjustUri}
+				aspect={1}
+				shape="circle"
+				outputWidth={600}
+				title="Ajustar foto"
+				onCancel={() => setAdjustUri(null)}
+				onConfirm={(cropped) => {
+					setAdjustUri(null);
+					updateField('photoUri', cropped);
+				}}
+			/>
+			<ModalSobe visible={isPasswordInfoVisible} onRequestClose={() => setIsPasswordInfoVisible(false)} backdropColor="rgba(0, 0, 0, 0.45)">
+				<View style={[styles.logoutOverlay, styles.transparentOverlay]}>
+					<View style={styles.logoutDialog}>
+						<View style={styles.passwordInfoIcon}>
+							<Feather name="lock" size={24} color={tc(COLORS.darkGreen)} />
+						</View>
+						<Text style={styles.logoutTitle}>Senha protegida</Text>
+						<Text style={styles.logoutMessage}>
+							Por segurança, nem o app nem o Firebase conseguem mostrar a senha atual. Você pode criar uma nova senha e ver o que está digitando.
+						</Text>
+						<View style={styles.logoutActions}>
+							<TouchableOpacity
+								style={[styles.logoutActionButton, styles.logoutCancelButton]}
+								onPress={() => setIsPasswordInfoVisible(false)}
+								accessibilityRole="button"
+							>
+								<Text style={styles.logoutActionText}>Cancelar</Text>
+							</TouchableOpacity>
+							<TouchableOpacity
+								style={[styles.logoutActionButton, styles.passwordChangeButton]}
+								onPress={startPasswordChange}
+								accessibilityRole="button"
+							>
+								<Text style={styles.logoutActionText}>Trocar senha</Text>
+							</TouchableOpacity>
+						</View>
+					</View>
+				</View>
+			</ModalSobe>
 			<Modal
 				visible={isLogoutModalVisible}
 				transparent
@@ -328,14 +407,14 @@ export default function Perfil({ navigation }) {
 			<View style={styles.screenPanel}>
 				<KeyboardAvoidingView
 					style={styles.keyboardArea}
-					behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+					behavior="padding"
 				>
 					<View style={styles.header}>
 						<View style={styles.headerActions}>
 							<CircularIconButton
 								style={styles.backButton}
 								borderRadius={12}
-								icon={<Feather name="chevron-left" size={27} color={COLORS.white} />}
+								icon={<Feather name="chevron-left" size={27} color={tc(COLORS.white)} />}
 								onPress={goBack}
 								accessibilityLabel="Voltar"
 							/>
@@ -346,7 +425,7 @@ export default function Perfil({ navigation }) {
 									accessibilityRole="button"
 									accessibilityLabel="Sair da conta"
 								>
-									<Ionicons name="exit-outline" size={24} color={COLORS.white} />
+									<Ionicons name="exit-outline" size={24} color={tc(COLORS.white)} />
 								</TouchableOpacity>
 								<TouchableOpacity
 									style={styles.historyButton}
@@ -355,7 +434,7 @@ export default function Perfil({ navigation }) {
 									accessibilityRole="button"
 									accessibilityLabel="Histórico de pedidos"
 								>
-									<Fontisto name="history" size={24} color={COLORS.white} />
+									<Fontisto name="history" size={24} color={tc(COLORS.white)} />
 								</TouchableOpacity>
 								{isAdmin ? (
 									<TouchableOpacity
@@ -365,7 +444,7 @@ export default function Perfil({ navigation }) {
 										accessibilityRole="button"
 										accessibilityLabel="Voltar ao Painel Admin"
 									>
-										<FontAwesome5 name="user-edit" size={24} color="white" />
+										<FontAwesome5 name="user-edit" size={24} color={tc('white')} />
 									</TouchableOpacity>
 								) : null}
 							</View>
@@ -378,7 +457,7 @@ export default function Perfil({ navigation }) {
 								activeOpacity={0.8}
 								accessibilityRole="button"
 							>
-								<Feather name="edit-2" size={14} color={COLORS.white} />
+								<Feather name="edit-2" size={14} color={tc(COLORS.white)} />
 								<Text style={styles.editProfileButtonText}>Editar Perfil</Text>
 							</TouchableOpacity>
 						) : (
@@ -403,7 +482,7 @@ export default function Perfil({ navigation }) {
 									accessibilityRole="button"
 									accessibilityLabel="Editar foto do perfil"
 								>
-									<Feather name="edit-2" size={21} color={COLORS.white} />
+									<Feather name="edit-2" size={21} color={tc(COLORS.white)} />
 								</TouchableOpacity>
 							) : null}
 						</View>
@@ -418,7 +497,7 @@ export default function Perfil({ navigation }) {
 										<View key={field.key} style={styles.field}>
 											<Text style={styles.label}>{field.label}</Text>
 											<View style={styles.inputWrap}>
-												<Feather name={field.icon} size={25} color={COLORS.muted} />
+												<Feather name={field.icon} size={25} color={tc(COLORS.muted)} />
 												<Text style={[styles.input, styles.readOnlyValue]}>
 													{hasPassword ? '••••••••' : 'Não configurada'}
 												</Text>
@@ -428,7 +507,7 @@ export default function Perfil({ navigation }) {
 													accessibilityRole="button"
 													accessibilityLabel="Informações sobre a senha protegida"
 												>
-													<Feather name="eye-off" size={20} color={COLORS.muted} />
+													<Feather name="eye-off" size={20} color={tc(COLORS.muted)} />
 												</TouchableOpacity>
 											</View>
 										</View>
@@ -440,14 +519,14 @@ export default function Perfil({ navigation }) {
 										<Text style={styles.label}>{field.label}</Text>
 										{isEditing ? (
 											<View style={styles.inputWrap}>
-												<Feather name={field.icon} size={25} color={COLORS.muted} />
+												<Feather name={field.icon} size={25} color={tc(COLORS.muted)} />
 												<TextInput
 													style={styles.input}
 													underlineColorAndroid="transparent"
 													value={profile[field.key]}
 													onChangeText={(value) => updateField(field.key, value)}
 													placeholder={field.key === 'password' ? 'Deixe em branco para manter' : field.placeholder}
-													placeholderTextColor="#888888"
+													placeholderTextColor={tc('#888888')}
 													keyboardType={field.keyboardType}
 													autoCapitalize={field.key === 'email' ? 'none' : 'sentences'}
 													secureTextEntry={field.key === 'password' && !isPasswordVisible}
@@ -464,14 +543,14 @@ export default function Perfil({ navigation }) {
 														<Feather
 															name={isPasswordVisible ? 'eye' : 'eye-off'}
 															size={20}
-															color={COLORS.muted}
+															color={tc(COLORS.muted)}
 														/>
 													</TouchableOpacity>
 												) : null}
 											</View>
 										) : (
 											<View style={styles.inputWrap}>
-												<Feather name={field.icon} size={25} color={COLORS.muted} />
+												<Feather name={field.icon} size={25} color={tc(COLORS.muted)} />
 												<Text style={[styles.input, styles.readOnlyValue]}>
 													{profile[field.key] || 'Não informado'}
 												</Text>
@@ -482,6 +561,7 @@ export default function Perfil({ navigation }) {
 							})}
 						</View>
 
+						{!isEditing ? <SeletorTema style={styles.themeSelector} /> : null}
 						{isEditing ? (
 							<View style={styles.buttonRow}>
 								<TouchableOpacity
@@ -510,7 +590,8 @@ export default function Perfil({ navigation }) {
 	);
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(StyleSheet.create({
+	themeSelector: { marginTop: 18, marginHorizontal: 2 },
 	safeArea: { flex: 1, backgroundColor: COLORS.darkGreen },
 	fontLoading: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.background },
 	topBand: { height: 40, backgroundColor: COLORS.darkGreen },
@@ -571,6 +652,9 @@ const styles = StyleSheet.create({
 	},
 	logoutCancelButton: { backgroundColor: COLORS.muted },
 	logoutConfirmButton: { backgroundColor: COLORS.cancel },
+	passwordChangeButton: { backgroundColor: COLORS.darkGreen },
+	transparentOverlay: { backgroundColor: 'transparent' },
+	passwordInfoIcon: { width: 48, height: 48, borderRadius: 14, backgroundColor: '#D8F6E9', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
 	logoutActionText: {
 		color: COLORS.white,
 		fontFamily: 'Montserrat_700Bold',
@@ -695,4 +779,4 @@ const styles = StyleSheet.create({
 	cancelButton: { backgroundColor: COLORS.cancel },
 	disabledButton: { opacity: 0.6 },
 	actionText: { color: COLORS.white, fontFamily: 'Montserrat_700Bold', fontSize: 15 },
-});
+}));

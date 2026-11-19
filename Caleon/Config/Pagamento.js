@@ -1,4 +1,4 @@
-// Configuração de pagamento e da loja. Troque aqui o endereço provisório pelo endereço real do mercado.
+// Configuração de pagamento e da loja (chave Pix e ponto de retirada mostrado no mapa).
 
 export const PIX_CONFIG = {
 	// Chave Pix do tipo celular: +55 + DDD + número.
@@ -6,16 +6,20 @@ export const PIX_CONFIG = {
 	// Nome e cidade de quem recebe (sem acentos, até 25 e 15 caracteres). O banco do cliente
 	// mostra o nome real do titular da chave na hora de confirmar o pagamento.
 	merchantName: 'MERCADO CALEON',
-	merchantCity: 'SAO PAULO',
+	merchantCity: 'SUZANO',
 };
 
 export const STORE = {
 	name: 'Mercado Caleon',
-	// ENDEREÇO PROVISÓRIO — substitua pelo endereço e coordenadas reais do mercado.
-	address: 'Av. Paulista, 1578 - Bela Vista, São Paulo - SP',
-	latitude: -23.5614,
-	longitude: -46.6559,
+	// Ponto de retirada: Escola SENAI "Luis Eulalio de Bueno Vidigal Filho" (coordenadas do OpenStreetMap).
+	address: 'Rua Inácio Garcia, 321 - Cidade Edson, Suzano - SP',
+	latitude: -23.5569529,
+	longitude: -46.3136211,
 	pickupMinutes: 30,
+	// Horário em que o cliente pode retirar (das 8h às 21h).
+	openHour: 8,
+	closeHour: 21,
+	hoursLabel: 'Todos os dias, das 8h às 21h',
 };
 
 export const SERVICE_FEE = 5;

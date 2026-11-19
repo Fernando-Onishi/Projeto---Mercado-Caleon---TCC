@@ -6,9 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import {
 	ActivityIndicator,
-	Alert,
 	Image,
-	Modal,
 	ScrollView,
 	StatusBar,
 	StyleSheet,
@@ -19,11 +17,20 @@ import {
 import AdminScreenLayout from '../Componentes/AdminScreenLayout';
 import NavegacaoAdmin from '../Componentes/NavegacaoAdmin';
 import AdminNotificationsModal from '../Componentes/AdminNotificationsModal';
+import EquipeModal from '../Componentes/EquipeModal';
+import CarrosselModal from '../Componentes/CarrosselModal';
+import SeletorTema from '../Componentes/SeletorTema';
+import AjusteImagem from '../Componentes/AjusteImagem';
+import { FotoMeuPerfil, useMeuPerfil } from '../Componentes/MeuPerfil';
 import CircularIconButton from '../Componentes/CircularIconButton';
-import { TEST_NOTIFICATIONS } from './adminNotifications';
+import { useAdminNotifications } from '../Componentes/AdminNotificationsContext';
 import { auth } from '../Config/FireBaseConfig';
 import { ADMIN_THEME } from '../Config/AdminTheme';
 import { getProfileStorageKey } from '../Config/PerfilStorage';
+import { describePhotoError, subscribeProfilePhoto, uploadProfilePhoto } from '../Config/FotoPerfil';
+import ModalSobe from '../Componentes/ModalSobe';
+import { themeColor, themedStyles, tc } from '../Config/Tema';
+import { showGlobalNotification } from '../Componentes/NotificacaoGlobal';
 
 const C = ADMIN_THEME.colors;
 const F = ADMIN_THEME.fonts;
@@ -39,7 +46,7 @@ const ROLE_INFO = {
 function ActionCard({ icon, title, subtitle, color, onPress, disabled, loading, accessibilityLabel }) {
 	return (
 		<TouchableOpacity
-			style={[styles.actionCard, { backgroundColor: color, shadowColor: color }]}
+			style={[styles.actionCard, { backgroundColor: themeColor(color, 'bg'), shadowColor: color }]}
 			onPress={onPress}
 			disabled={disabled}
 			activeOpacity={0.85}
@@ -47,18 +54,20 @@ function ActionCard({ icon, title, subtitle, color, onPress, disabled, loading, 
 			accessibilityLabel={accessibilityLabel || title}
 		>
 			<View style={styles.actionIcon}>
-				{loading ? <ActivityIndicator size="small" color={C.white} /> : <Feather name={icon} size={22} color={C.white} />}
+				{loading ? <ActivityIndicator size="small" color={tc(C.white)} /> : <Feather name={icon} size={22} color={tc(C.white)} />}
 			</View>
 			<View style={styles.actionCopy}>
 				<Text style={styles.actionTitle}>{title}</Text>
 				<Text style={styles.actionSubtitle} numberOfLines={1}>{subtitle}</Text>
 			</View>
-			<Feather name="chevron-right" size={22} color={C.white} />
+			<Feather name="chevron-right" size={22} color={tc(C.white)} />
 		</TouchableOpacity>
 	);
 }
 
 export default function AdminConfiguracoes({ navigation, userRole }) {
+	const meuPerfil = useMeuPerfil();
+	const { unreadCount } = useAdminNotifications();
 	const [fontsLoaded] = useFonts({
 		LilitaOne_400Regular: require('@expo-google-fonts/lilita-one/400Regular/LilitaOne_400Regular.ttf'),
 		Montserrat_400Regular: require('@expo-google-fonts/montserrat/400Regular/Montserrat_400Regular.ttf'),
@@ -69,21 +78,27 @@ export default function AdminConfiguracoes({ navigation, userRole }) {
 	const [isSignOutModalVisible, setIsSignOutModalVisible] = useState(false);
 	const [signOutError, setSignOutError] = useState('');
 	const [notificationsVisible, setNotificationsVisible] = useState(false);
+	const [teamVisible, setTeamVisible] = useState(false);
+	const [adjustUri, setAdjustUri] = useState(null);
+	const [carouselVisible, setCarouselVisible] = useState(false);
 	const [photoUri, setPhotoUri] = useState(null);
+	const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
 	const role = ROLE_INFO[userRole] || ROLE_INFO.admin;
 	const uid = auth.currentUser?.uid;
 	const email = auth.currentUser?.email || 'Sessão não identificada';
 
-	// A foto fica no mesmo perfil salvo no aparelho que a tela de Perfil do cliente usa.
+	// A foto fica no Firebase (users/{uid}.photoURL) e aparece igual em todos os aparelhos.
 	useEffect(() => {
-		let active = true;
 		AsyncStorage.getItem(getProfileStorageKey(uid))
 			.then((stored) => {
-				if (active && stored) setPhotoUri(JSON.parse(stored).photoUri || null);
+				const local = stored ? JSON.parse(stored).photoUri : null;
+				if (local) setPhotoUri((current) => current || local);
 			})
-			.catch((error) => console.error('Não foi possível carregar a foto do perfil.', error));
-		return () => { active = false; };
+			.catch(() => {});
+		return subscribeProfilePhoto(uid, (url) => {
+			if (url) setPhotoUri(url);
+		});
 	}, [uid]);
 
 	if (!fontsLoaded) return null;
@@ -92,26 +107,47 @@ export default function AdminConfiguracoes({ navigation, userRole }) {
 		try {
 			const result = await ImagePicker.launchImageLibraryAsync({
 				mediaTypes: ['images'],
-				allowsEditing: true,
-				aspect: [1, 1],
-				shape: 'oval',
-				quality: 0.9,
+				quality: 1,
 			});
-			if (result.canceled) return;
-			const nextPhotoUri = result.assets[0].uri;
+			// Abre o ajuste (posição e zoom); a foto só é enviada depois de confirmar.
+			if (!result.canceled) setAdjustUri(result.assets[0].uri);
+		} catch {
+			showGlobalNotification('Não foi possível abrir a galeria.');
+		}
+	}
+
+	async function savePhoto(localUri) {
+		try {
+			setPhotoUri(localUri);
+			setUploadingPhoto(true);
+			const photoURL = await uploadProfilePhoto(localUri);
+			setPhotoUri(photoURL);
+			// Mantém também no perfil salvo no aparelho, usado pela tela de Perfil.
 			const storageKey = getProfileStorageKey(uid);
 			const stored = await AsyncStorage.getItem(storageKey);
 			const profile = stored ? JSON.parse(stored) : {};
-			await AsyncStorage.setItem(storageKey, JSON.stringify({ ...profile, photoUri: nextPhotoUri }));
-			setPhotoUri(nextPhotoUri);
+			await AsyncStorage.setItem(storageKey, JSON.stringify({ ...profile, photoUri: photoURL }));
 		} catch (error) {
 			console.error('Não foi possível alterar a foto do perfil.', error);
-			Alert.alert('Foto do perfil', 'Não foi possível alterar a foto. Tente novamente.');
+			if (error?.photoURL) {
+				// O Firebase recusou: mantém a foto pelo menos neste aparelho.
+				setPhotoUri(error.photoURL);
+				try {
+					const storageKey = getProfileStorageKey(uid);
+					const stored = await AsyncStorage.getItem(storageKey);
+					await AsyncStorage.setItem(storageKey, JSON.stringify({ ...(stored ? JSON.parse(stored) : {}), photoUri: error.photoURL }));
+				} catch {}
+			} else {
+				setPhotoUri(null);
+			}
+			showGlobalNotification(describePhotoError(error));
+		} finally {
+			setUploadingPhoto(false);
 		}
 	}
 
 	function openCustomerView() {
-		navigation.navigate('TelaHome');
+		navigation.navigate('TelaTroca', { destino: 'TelaHome' });
 	}
 
 	function confirmSignOut() {
@@ -139,21 +175,35 @@ export default function AdminConfiguracoes({ navigation, userRole }) {
 	return (
 		<>
 			<StatusBar barStyle="light-content" backgroundColor={C.green} />
+			<EquipeModal visible={teamVisible} onClose={() => setTeamVisible(false)} />
+			<AjusteImagem
+				visible={Boolean(adjustUri)}
+				uri={adjustUri}
+				aspect={1}
+				shape="circle"
+				outputWidth={600}
+				title="Ajustar foto"
+				onCancel={() => setAdjustUri(null)}
+				onConfirm={(cropped) => {
+					setAdjustUri(null);
+					savePhoto(cropped);
+				}}
+			/>
+			<CarrosselModal visible={carouselVisible} onClose={() => setCarouselVisible(false)} />
 			<AdminNotificationsModal
 				visible={notificationsVisible}
 				onClose={() => setNotificationsVisible(false)}
 				navigation={navigation}
 			/>
-			<Modal
+			<ModalSobe
 				visible={isSignOutModalVisible}
-				transparent
-				animationType="fade"
 				onRequestClose={() => setIsSignOutModalVisible(false)}
+				backdropColor="rgba(0, 0, 0, 0.5)"
 			>
 				<View style={styles.signOutOverlay}>
 					<View style={styles.signOutDialog}>
 						<View style={styles.signOutDialogIcon}>
-							<Feather name="log-out" size={24} color={C.red} />
+							<Feather name="log-out" size={24} color={tc(C.red)} />
 						</View>
 						<Text style={styles.signOutTitle}>Sair da conta</Text>
 						<Text style={styles.signOutMessage}>Deseja encerrar a sessão administrativa?</Text>
@@ -173,33 +223,33 @@ export default function AdminConfiguracoes({ navigation, userRole }) {
 								disabled={signingOut}
 								accessibilityRole="button"
 							>
-								{signingOut ? <ActivityIndicator size="small" color={C.white} /> : null}
+								{signingOut ? <ActivityIndicator size="small" color={tc(C.white)} /> : null}
 								<Text style={styles.signOutActionText}>{signingOut ? 'Saindo...' : 'Sair'}</Text>
 							</TouchableOpacity>
 						</View>
 					</View>
 				</View>
-			</Modal>
+			</ModalSobe>
 			<AdminScreenLayout
 				headerHeight={72}
 				headerContent={(
 					<View style={styles.topbar}>
-						<View style={styles.brandMark}><Feather name="user" size={22} color={C.white} /></View>
+						<View style={styles.brandMark}><FotoMeuPerfil photo={meuPerfil.photo} size={40} /></View>
 						<View style={styles.brandCopy}>
 							<Text style={styles.kicker}>Painel Operacional</Text>
-							<Text style={styles.greeting}>{role.greeting}</Text>
+							<Text style={styles.greeting}>{meuPerfil.firstName ? `Olá, ${meuPerfil.firstName}` : role.greeting}</Text>
 						</View>
 						<View style={styles.notificationButtonWrap}>
 							<CircularIconButton
 								size={ADMIN_THEME.layout.headerActionSize}
 								borderRadius={12}
-								icon={<Feather name="bell" size={22} color={C.white} />}
+								icon={<Feather name="bell" size={22} color={tc(C.white)} />}
 								onPress={() => setNotificationsVisible(true)}
-								accessibilityLabel={`Abrir notificações, ${TEST_NOTIFICATIONS.length} disponíveis`}
+								accessibilityLabel={`Abrir notificações, ${unreadCount} disponíveis`}
 							/>
-							{TEST_NOTIFICATIONS.length > 0 ? (
+							{unreadCount > 0 ? (
 								<View style={styles.notificationBadge}>
-									<Text style={styles.notificationBadgeText}>{TEST_NOTIFICATIONS.length > 99 ? '99+' : TEST_NOTIFICATIONS.length}</Text>
+									<Text style={styles.notificationBadgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
 								</View>
 							) : null}
 						</View>
@@ -219,6 +269,7 @@ export default function AdminConfiguracoes({ navigation, userRole }) {
 							<TouchableOpacity
 								style={styles.avatar}
 								onPress={changePhoto}
+								disabled={uploadingPhoto}
 								activeOpacity={0.85}
 								accessibilityRole="button"
 								accessibilityLabel="Alterar foto do perfil"
@@ -226,16 +277,16 @@ export default function AdminConfiguracoes({ navigation, userRole }) {
 								{photoUri ? (
 									<Image source={{ uri: photoUri }} style={styles.avatarImage} />
 								) : (
-									<Feather name="user" size={30} color={C.green} />
+									<Feather name="user" size={30} color={tc(C.green)} />
 								)}
 								<View style={styles.onlineDot} />
 								<View style={styles.editPhotoBadge}>
-									<Feather name="edit-2" size={12} color={C.white} />
+									{uploadingPhoto ? <ActivityIndicator size="small" color={tc(C.white)} /> : <Feather name="edit-2" size={12} color={tc(C.white)} />}
 								</View>
 							</TouchableOpacity>
 							<View style={styles.accountCopy}>
 								<View style={styles.roleBadge}>
-									<Feather name="shield" size={11} color={C.ink} />
+									<Feather name="shield" size={11} color={tc(C.ink)} />
 									<Text style={styles.roleBadgeText}>{role.badge}</Text>
 								</View>
 								<Text style={styles.accountLabel}>Conta conectada</Text>
@@ -243,7 +294,7 @@ export default function AdminConfiguracoes({ navigation, userRole }) {
 						</View>
 						<View style={styles.accountDivider} />
 						<View style={styles.emailRow}>
-							<View style={styles.emailIcon}><Feather name="mail" size={18} color={C.white} /></View>
+							<View style={styles.emailIcon}><Feather name="mail" size={18} color={tc(C.white)} /></View>
 							<View style={styles.accountCopy}>
 								<Text style={styles.emailLabel}>E-mail da conta</Text>
 								<Text style={styles.email} numberOfLines={1}>{email}</Text>
@@ -259,6 +310,31 @@ export default function AdminConfiguracoes({ navigation, userRole }) {
 						color={C.mint}
 						onPress={openCustomerView}
 					/>
+					{userRole === 'admin' ? (
+						<View style={styles.actionSpacing}>
+							<ActionCard
+								icon="image"
+								title="Carrossel da Home"
+								subtitle="Banners de promoção que os clientes veem"
+								color={C.mint}
+								onPress={() => setCarouselVisible(true)}
+							/>
+						</View>
+					) : null}
+					{userRole === 'admin' ? (
+						<View style={styles.actionSpacing}>
+							<ActionCard
+								icon="users"
+								title="Equipe"
+								subtitle="Tornar uma conta cadastrada administradora"
+								color={C.green}
+								onPress={() => setTeamVisible(true)}
+							/>
+						</View>
+					) : null}
+
+					<Text style={styles.sectionLabel}>Aparência</Text>
+					<SeletorTema showTitle={false} />
 
 					<Text style={styles.sectionLabel}>Sessão</Text>
 					<ActionCard
@@ -282,7 +358,7 @@ export default function AdminConfiguracoes({ navigation, userRole }) {
 	);
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(StyleSheet.create({
 	topbar: { minHeight: 72, paddingHorizontal: ADMIN_THEME.layout.contentPadding, flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: C.adminHeaderBg },
 	brandMark: { width: ADMIN_THEME.layout.headerActionSize, height: ADMIN_THEME.layout.headerActionSize, borderRadius: 12, backgroundColor: C.mint, alignItems: 'center', justifyContent: 'center' },
 	brandCopy: { flex: 1 },
@@ -324,6 +400,7 @@ const styles = StyleSheet.create({
 
 	sectionLabel: { color: C.muted, fontFamily: F.bold, fontSize: 11, letterSpacing: 0.8, textTransform: 'uppercase', marginTop: 24, marginBottom: 10, paddingHorizontal: 3 },
 
+	actionSpacing: { marginTop: 12 },
 	actionCard: {
 		minHeight: 70,
 		paddingHorizontal: 16,
@@ -346,7 +423,7 @@ const styles = StyleSheet.create({
 	footerDivider: { width: '45%', height: StyleSheet.hairlineWidth, backgroundColor: '#D6DEDA', marginBottom: 16 },
 	footerText: { color: C.muted, fontFamily: F.bold, fontSize: 11 },
 
-	signOutOverlay: { flex: 1, padding: 24, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0, 0, 0, 0.5)' },
+	signOutOverlay: { flex: 1, padding: 24, alignItems: 'center', justifyContent: 'center' },
 	signOutDialog: { width: '100%', maxWidth: 380, padding: 22, borderRadius: 22, backgroundColor: C.white },
 	signOutDialogIcon: { width: 48, height: 48, borderRadius: 14, backgroundColor: '#FFF0F0', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
 	signOutTitle: { color: C.ink, fontFamily: F.display, fontSize: 24 },
@@ -358,4 +435,4 @@ const styles = StyleSheet.create({
 	cancelButtonText: { color: C.ink },
 	confirmButton: { backgroundColor: C.red },
 	signOutActionText: { color: C.white, fontFamily: F.bold, fontSize: 13 },
-});
+}));

@@ -15,8 +15,11 @@ import { ADMIN_THEME } from '../Config/AdminTheme';
 import { formatProductUnit, getProductPrice, PRODUCTS } from '../Config/Produtos';
 import NavegacaoAdmin from '../Componentes/NavegacaoAdmin';
 import { useProductModal } from '../Componentes/ProductModalContext';
-import { getStockSaleUnits, isExpiringSoon, isLowStock, isOutOfStock, mapAdminProduct } from './adminProdutoUtils';
-import { TEST_NOTIFICATIONS } from './adminNotifications';
+import { daysUntilExpiry, formatExpiry, getStockSaleUnits, isExpired, isExpiringSoon, isLowStock, isOutOfStock, mapAdminProduct } from './adminProdutoUtils';
+import { useAdminNotifications } from '../Componentes/AdminNotificationsContext';
+import { isCatalogSeeded } from '../Config/CatalogoFirebase';
+import { themeColor, themedStyles, tc } from '../Config/Tema';
+import { showGlobalNotification } from '../Componentes/NotificacaoGlobal';
 
 const C = ADMIN_THEME.colors;
 const money = (value) => Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -31,6 +34,7 @@ const localProducts = PRODUCTS.map((product) => ({
 }));
 
 export default function AdminProdutos({ navigation, route, userRole }) {
+  const { unreadCount } = useAdminNotifications();
   const { width: windowWidth } = useWindowDimensions();
   const cardWidth = Math.max(120, (windowWidth - 36) / 2);
   const cardScale = cardWidth / 130;
@@ -51,7 +55,8 @@ export default function AdminProdutos({ navigation, route, userRole }) {
   useEffect(() => {
     setLoadError(false);
     return onSnapshot(collection(db, 'products'), (snapshot) => {
-      const mergedProducts = new Map(localProducts.map((product) => [product.id, product]));
+      // Depois que o catálogo foi enviado ao Firebase, só vale o que está no Firestore.
+      const mergedProducts = new Map(isCatalogSeeded(snapshot.docs) ? [] : localProducts.map((product) => [product.id, product]));
       snapshot.docs.forEach((productDocument) => {
         const data = productDocument.data();
         if (data.active === false) {
@@ -89,7 +94,7 @@ export default function AdminProdutos({ navigation, route, userRole }) {
             await setDoc(doc(db, 'products', product.id), { active: false, updatedAt: serverTimestamp() }, { merge: true });
           } catch (error) {
             console.error('Não foi possível excluir o produto.', error);
-            Alert.alert('Erro', 'Não foi possível excluir o produto. Confira sua conexão e suas permissões.');
+            showGlobalNotification('Não foi possível excluir o produto. Confira sua conexão e suas permissões.');
           }
         },
       },
@@ -118,14 +123,14 @@ export default function AdminProdutos({ navigation, route, userRole }) {
               left={<CircularIconButton
                 size={ADMIN_THEME.layout.headerActionSize}
                 borderRadius={12}
-                icon={<Feather name="chevron-left" size={27} color={C.white} />}
+                icon={<Feather name="chevron-left" size={27} color={tc(C.white)} />}
                 onPress={() => navigation.canGoBack() ? navigation.goBack() : navigation.navigate('ControleEstoque')}
                 accessibilityLabel="Voltar ao controle de estoque"
               />}
               right={<CircularIconButton
                 size={ADMIN_THEME.layout.headerActionSize}
                 borderRadius={12}
-                icon={<Feather name="bell" size={22} color={C.white} />}
+                icon={<Feather name="bell" size={22} color={tc(C.white)} />}
                 onPress={() => setNotificationsVisible(true)}
                 accessibilityLabel="Ver alertas de estoque baixo"
               />}
@@ -141,7 +146,7 @@ export default function AdminProdutos({ navigation, route, userRole }) {
               left={<CircularIconButton
                 size={40}
                 borderRadius={12}
-                icon={<Feather name="chevron-left" size={27} color={C.white} />}
+                icon={<Feather name="chevron-left" size={27} color={tc(C.white)} />}
                 onPress={() => navigation.canGoBack() ? navigation.goBack() : navigation.navigate('AdminHome')}
                 accessibilityLabel="Voltar"
               />}
@@ -150,7 +155,7 @@ export default function AdminProdutos({ navigation, route, userRole }) {
                   <CircularIconButton
                     size={40}
                     borderRadius={12}
-                    icon={<Feather name="package" size={22} color={C.white} />}
+                    icon={<Feather name="package" size={22} color={tc(C.white)} />}
                     onPress={() => navigation.navigate('ControleEstoque')}
                     accessibilityLabel="Controle de estoque"
                   />
@@ -158,13 +163,13 @@ export default function AdminProdutos({ navigation, route, userRole }) {
                     <CircularIconButton
                       size={40}
                       borderRadius={12}
-                      icon={<Feather name="bell" size={22} color={C.white} />}
+                      icon={<Feather name="bell" size={22} color={tc(C.white)} />}
                       onPress={() => setNotificationsVisible(true)}
-                      accessibilityLabel={`Abrir notificações, ${TEST_NOTIFICATIONS.length} disponíveis`}
+                      accessibilityLabel={`Abrir notificações, ${unreadCount} disponíveis`}
                     />
-                    {TEST_NOTIFICATIONS.length > 0 ? (
+                    {unreadCount > 0 ? (
                       <View style={styles.notificationBadge}>
-                        <Text style={styles.notificationBadgeText}>{TEST_NOTIFICATIONS.length > 99 ? '99+' : TEST_NOTIFICATIONS.length}</Text>
+                        <Text style={styles.notificationBadgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
                       </View>
                     ) : null}
                   </View>
@@ -197,6 +202,8 @@ export default function AdminProdutos({ navigation, route, userRole }) {
                 : item.originalPricePerKg ? getProductPrice({ ...item, pricePerKg: item.originalPricePerKg }, item.defaultWeightGrams) : null;
               const stockStatus = isOutOfStock(item)
                 ? { label: 'Zerado', borderColor: C.red, textColor: C.red, backgroundColor: '#FFF0F0' }
+                : isExpired(item)
+                  ? { label: 'Vencido', borderColor: C.red, textColor: C.red, backgroundColor: '#FFF0F0' }
                 : isExpiringSoon(item)
                   ? { label: 'Vence logo', borderColor: '#FFA326', textColor: '#A96E00', backgroundColor: '#FFF0D8' }
                   : isLowStock(item)
@@ -211,22 +218,31 @@ export default function AdminProdutos({ navigation, route, userRole }) {
                 ]}>
                   <TouchableOpacity style={styles.productMain} onPress={() => userRole === 'admin' && openProductModal({ productId: item.id, product: item.isSeedProduct ? item : undefined })} activeOpacity={0.8} disabled={userRole !== 'admin'}>
                       <View style={[styles.productArt, { height: cardWidth * 0.56, borderRadius: cardWidth * 0.06 }]}>
-                      {item.imageUrl ? <Image source={{ uri: item.imageUrl }} style={styles.productImage} resizeMode="contain" /> : <Feather name="package" size={42} color={C.mint} />}
+                      {item.imageUrl ? <Image source={{ uri: item.imageUrl }} style={styles.productImage} resizeMode="contain" /> : <Feather name="package" size={42} color={tc(C.mint)} />}
                       {discount > 0 ? <Text style={[styles.discount, { fontSize: 9 * cardScale, paddingHorizontal: 5 * cardScale, paddingVertical: 2 * cardScale, borderRadius: 15 * cardScale }]}>{discount}% OFF</Text> : null}
-                      {isStockFilterScreen ? <Text style={[styles.stockWarning, { color: stockStatus.textColor, backgroundColor: stockStatus.backgroundColor, fontSize: 9 * cardScale, paddingHorizontal: 5 * cardScale, paddingVertical: 3 * cardScale }]}>{stockStatus.label}</Text> : null}
+                      {isStockFilterScreen ? <Text style={[styles.stockWarning, { color: tc(stockStatus.textColor), backgroundColor: themeColor(stockStatus.backgroundColor, 'bg'), fontSize: 9 * cardScale, paddingHorizontal: 5 * cardScale, paddingVertical: 3 * cardScale }]}>{stockStatus.label}</Text> : null}
                     </View>
                     <Text style={[styles.productName, { fontSize: 12 * cardScale, marginTop: 6 * cardScale }]} numberOfLines={1}>
                       {item.name} <Text style={[styles.productUnit, { fontSize: 8 * cardScale }]}>{unitLabel}</Text>
                     </Text>
                     {isStockFilterScreen ? <Text style={[styles.stockText, { fontSize: 10 * cardScale, marginTop: cardScale }]}>{stockLabel} {item.unit || 'unid.'} em estoque</Text> : null}
+                    {formatExpiry(item) ? (() => {
+                      const days = daysUntilExpiry(item);
+                      const tone = days < 0 ? styles.expiryExpired : days <= 15 ? styles.expirySoon : null;
+                      return (
+                        <Text style={[styles.expiryText, tone, { fontSize: 9 * cardScale, marginTop: cardScale }]} numberOfLines={1}>
+                          {days < 0 ? 'Venceu' : 'Val.'} {formatExpiry(item)}{days >= 0 && days <= 15 ? ` • ${days === 0 ? 'hoje' : `${days} d`}` : ''}
+                        </Text>
+                      );
+                    })() : null}
                     <View style={[styles.priceRow, { marginTop: cardScale }]}>
                       <Text style={[styles.price, { fontSize: 18 * cardScale }]}>{money(salePrice)}</Text>
                       {originalPrice ? <Text style={[styles.oldPrice, { fontSize: 8 * cardScale }, !isStockFilterScreen && styles.catalogOldPrice]}>{money(originalPrice)}</Text> : null}
                     </View>
                   </TouchableOpacity>
                   {userRole === 'admin' ? <View style={[styles.productActions, { marginTop: cardWidth * 0.02 }]}>
-                    <TouchableOpacity style={[styles.editButton, { height: cardWidth * 0.16, borderRadius: cardWidth * 0.06 }]} onPress={() => openProductModal({ productId: item.id, product: item.isSeedProduct ? item : undefined })} accessibilityRole="button" accessibilityLabel={`Editar ${item.name}`}><Text style={[styles.actionText, { fontSize: 8.8 * cardScale }]}>Editar</Text><Feather name="edit-2" size={11 * cardScale} color="#FFFFFF" /></TouchableOpacity>
-                    <TouchableOpacity style={[styles.deleteButton, { height: cardWidth * 0.16, borderRadius: cardWidth * 0.06 }]} onPress={() => deleteProduct(item)} accessibilityRole="button" accessibilityLabel={`Deletar ${item.name}`}><Text style={[styles.actionText, { fontSize: 8.8 * cardScale }]}>Deletar</Text><Feather name="trash-2" size={11 * cardScale} color="#FFFFFF" /></TouchableOpacity>
+                    <TouchableOpacity style={[styles.editButton, { height: cardWidth * 0.16, borderRadius: cardWidth * 0.06 }]} onPress={() => openProductModal({ productId: item.id, product: item.isSeedProduct ? item : undefined })} accessibilityRole="button" accessibilityLabel={`Editar ${item.name}`}><Text style={[styles.actionText, { fontSize: 8.8 * cardScale }]}>Editar</Text><Feather name="edit-2" size={11 * cardScale} color={tc('#FFFFFF')} /></TouchableOpacity>
+                    <TouchableOpacity style={[styles.deleteButton, { height: cardWidth * 0.16, borderRadius: cardWidth * 0.06 }]} onPress={() => deleteProduct(item)} accessibilityRole="button" accessibilityLabel={`Deletar ${item.name}`}><Text style={[styles.actionText, { fontSize: 8.8 * cardScale }]}>Deletar</Text><Feather name="trash-2" size={11 * cardScale} color={tc('#FFFFFF')} /></TouchableOpacity>
                   </View> : null}
                 </View>
               );
@@ -238,7 +254,7 @@ export default function AdminProdutos({ navigation, route, userRole }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(StyleSheet.create({
   stockHeader: { height: ADMIN_THEME.layout.panelHeaderHeight, paddingTop: 15, alignItems: 'center' },
   catalogHeader: { height: ADMIN_THEME.layout.panelHeaderHeight, backgroundColor: C.bg, paddingTop: 15, alignItems: 'center' },
   notificationButtonWrap: { position: 'relative' },
@@ -270,6 +286,9 @@ const styles = StyleSheet.create({
   productImage: { width: '84%', height: '100%' },
   discount: { position: 'absolute', top: 4, left: 4, backgroundColor: '#FF3B30', color: '#FFFFFF', fontFamily: 'LilitaOne_400Regular', fontSize: 8, paddingHorizontal: 5, paddingVertical: 3, borderRadius: 5, zIndex: 1 },
   stockWarning: { position: 'absolute', top: 6, right: 6, backgroundColor: '#FFF0D8', color: '#A96E00', fontSize: 8, fontWeight: '900', paddingHorizontal: 5, paddingVertical: 3, borderRadius: 5, zIndex: 1 },
+  expiryText: { color: '#6B7571', fontFamily: 'Montserrat_500Medium' },
+  expirySoon: { color: '#A96E00', fontFamily: 'Montserrat_700Bold' },
+  expiryExpired: { color: '#FF383C', fontFamily: 'Montserrat_700Bold' },
   productName: { color: C.green, fontFamily: 'Montserrat_700Bold' },
   productUnit: { color: '#7E8985', fontFamily: 'Montserrat_400Regular', fontSize: 10 },
   stockText: { color: C.muted, fontFamily: 'Montserrat_400Regular', fontSize: 9, marginTop: 1 },
@@ -305,4 +324,4 @@ const styles = StyleSheet.create({
   buttonText: { color: '#FFFFFF', fontSize: 12, fontWeight: '900' },
   deleteFull: { alignItems: 'center', padding: 10, marginTop: 4 },
   deleteFullText: { color: C.red, fontWeight: '800', fontSize: 11 },
-});
+}));

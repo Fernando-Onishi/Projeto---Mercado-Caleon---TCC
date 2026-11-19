@@ -1,3 +1,5 @@
+import { productImageFor, productName } from '../Config/Produtos';
+
 export function mapAdminProduct(documentSnapshot) {
 	const data = documentSnapshot.data();
 	const pricePerKg = Number(data.pricePerKg);
@@ -9,7 +11,7 @@ export function mapAdminProduct(documentSnapshot) {
 	return {
 		...data,
 		id: documentSnapshot.id,
-		name: data.name.trim(),
+		name: productName(data.name),
 		category: data.category === 'Horti-Fruti' ? 'HortiFruti' : data.category || 'Sem categoria',
 		pricePerKg,
 		originalPricePerKg: Number.isFinite(originalPricePerKg) && originalPricePerKg > pricePerKg ? originalPricePerKg : null,
@@ -17,9 +19,7 @@ export function mapAdminProduct(documentSnapshot) {
 		stockCurrent: Math.max(0, Number(data.stockCurrent) || 0),
 		stockMinimum: Math.max(0, Number(data.stockMinimum) || 0),
 		stockCritical: Math.max(0, Number(data.stockCritical) || 0),
-		imageUrl: typeof data.imageUrl === 'string'
-			? data.imageUrl
-			: Array.isArray(data.imageUrls) ? data.imageUrls.find((url) => typeof url === 'string') || '' : '',
+		imageUrl: productImageFor(documentSnapshot.id, data.imageUrl, data.imageUrls),
 	};
 }
 
@@ -47,6 +47,11 @@ export function getExpiryDate(product) {
 	const value = product.expiresAt;
 	if (value && typeof value.toDate === 'function') return value.toDate();
 	if (value instanceof Date) return value;
+	if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+		// Data sem horário: usa o dia local (new Date('aaaa-mm-dd') seria meia-noite UTC, o dia anterior no Brasil).
+		const [y, m, d] = value.split('-').map(Number);
+		return new Date(y, m - 1, d);
+	}
 	if (typeof value === 'string' || typeof value === 'number') {
 		const date = new Date(value);
 		return Number.isNaN(date.getTime()) ? null : date;
@@ -54,9 +59,49 @@ export function getExpiryDate(product) {
 	return null;
 }
 
-export function isExpiringSoon(product, now = Date.now()) {
+// Dias até vencer (negativo = já venceu). Conta o dia da validade inteiro.
+export function daysUntilExpiry(product, now = Date.now()) {
 	const expiryDate = getExpiryDate(product);
-	if (!expiryDate) return false;
-	const daysUntilExpiry = (expiryDate.getTime() - now) / 86_400_000;
-	return daysUntilExpiry >= 0 && daysUntilExpiry <= 15;
+	if (!expiryDate) return null;
+	const endOfDay = new Date(expiryDate.getFullYear(), expiryDate.getMonth(), expiryDate.getDate(), 23, 59, 59);
+	return Math.floor((endOfDay.getTime() - now) / 86_400_000);
+}
+
+export function isExpired(product, now = Date.now()) {
+	const days = daysUntilExpiry(product, now);
+	return days !== null && days < 0;
+}
+
+// Vence nos próximos 15 dias (ou já venceu): entra no aviso "Vencimento próximo" do admin.
+export function isExpiringSoon(product, now = Date.now()) {
+	const days = daysUntilExpiry(product, now);
+	return days !== null && days <= 15;
+}
+
+const two = (n) => String(n).padStart(2, '0');
+
+/** Validade em dd/mm/aaaa (ou '' sem validade). */
+export function formatExpiry(product) {
+	const date = getExpiryDate(product);
+	return date ? `${two(date.getDate())}/${two(date.getMonth() + 1)}/${date.getFullYear()}` : '';
+}
+
+/** Máscara do campo: só números, vira dd/mm/aaaa enquanto digita. */
+export function maskExpiryInput(value) {
+	const digits = String(value || '').replace(/\D/g, '').slice(0, 8);
+	if (digits.length <= 2) return digits;
+	if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+	return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
+/** 'dd/mm/aaaa' -> 'aaaa-mm-dd'. '' -> null (sem validade). Data inválida -> undefined. */
+export function parseExpiryInput(value) {
+	const text = String(value || '').trim();
+	if (!text) return null;
+	const match = text.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+	if (!match) return undefined;
+	const [, d, m, y] = match.map(Number);
+	const date = new Date(y, m - 1, d);
+	if (date.getFullYear() !== y || date.getMonth() !== m - 1 || date.getDate() !== d || y < 2000 || y > 2100) return undefined;
+	return `${y}-${two(m)}-${two(d)}`;
 }

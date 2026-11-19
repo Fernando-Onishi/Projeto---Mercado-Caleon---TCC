@@ -3,6 +3,7 @@ import {StyleSheet, Image, ImageBackground} from 'react-native';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../Config/FireBaseConfig';
 import SafeAreaScreen from '../Componentes/SafeAreaScreen';
+import { themedStyles } from '../Config/Tema';
 
 
 export default function TelaSplash({navigation}) {
@@ -32,7 +33,7 @@ export default function TelaSplash({navigation}) {
   )
 }
 
-const estilos = StyleSheet.create({
+const estilos = themedStyles(StyleSheet.create({
   caixa:{
     flex:1,
     justifyContent:'center',
@@ -56,4 +57,4 @@ const estilos = StyleSheet.create({
 
 
   }
-)
+))

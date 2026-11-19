@@ -10,10 +10,11 @@ import {
 } from 'react-native';
 import Feather from '@expo/vector-icons/Feather';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import BotaoSacola from '../Componentes/BotaoSacola';
+import BotaoNotificacoesCliente from '../Componentes/BotaoNotificacoesCliente';
 import NavegacaoInferior from '../Componentes/NavegacaoInferior';
 import SafeAreaScreen from '../Componentes/SafeAreaScreen';
 import CircularIconButton from '../Componentes/CircularIconButton';
+import { themedStyles, tc } from '../Config/Tema';
 
 const COLORS = {
 	primaryDark: '#1B4B3D',
@@ -65,11 +66,13 @@ export default function TelaProdutos({ navigation, onBack }) {
 						<CircularIconButton
 							style={styles.backButton}
 							borderRadius={12}
-							icon={<Feather name="chevron-left" size={27} color={COLORS.white} />}
+							icon={<Feather name="chevron-left" size={27} color={tc(COLORS.white)} />}
 							onPress={goBack}
 							accessibilityLabel="Voltar"
 						/>
-						<BotaoSacola navigation={navigation} size={40} />
+						<View style={{ flexDirection: 'row', gap: 8 }}>
+							<BotaoNotificacoesCliente navigation={navigation} size={40} />
+						</View>
 					</View>
 					<Text style={styles.title}>Produtos</Text>
 					<Text style={styles.subtitle}>Categorias</Text>
@@ -96,7 +99,7 @@ export default function TelaProdutos({ navigation, onBack }) {
 										<MaterialCommunityIcons
 											name={category.icon}
 											size={34}
-											color={COLORS.icon}
+											color={tc(COLORS.icon)}
 										/>
 									</View>
 									<Text style={styles.categoryName}>{category.name}</Text>
@@ -112,7 +115,7 @@ export default function TelaProdutos({ navigation, onBack }) {
 	);
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(StyleSheet.create({
 	safeArea: {
 		flex: 1,
 		backgroundColor: COLORS.primaryDark,
@@ -211,4 +214,4 @@ const styles = StyleSheet.create({
 		fontSize: 20,
 		textAlign: 'center',
 	},
-});
+}));

@@ -1,8 +1,9 @@
 import React, { createContext, useCallback, useContext, useState } from 'react';
-import { Alert } from 'react-native';
+
 import { auth } from '../Config/FireBaseConfig';
 import { getUserRole } from '../src/utils/getUserRole';
 import ProductFormModal from '../TelasAdmin/ProductFormModal';
+import { showGlobalNotification } from './NotificacaoGlobal';
 
 const ProductModalContext = createContext(null);
 
@@ -17,13 +18,13 @@ export function ProductModalProvider({ children }) {
 			const user = auth.currentUser;
 			const role = user ? await getUserRole(user) : null;
 			if (role !== 'admin') {
-				Alert.alert('Acesso restrito', 'Somente administradores podem cadastrar ou editar produtos.');
+				showGlobalNotification('Somente administradores podem cadastrar ou editar produtos.');
 				return;
 			}
 			setModalRequest({ productId, product });
 		} catch (error) {
 			console.error('Não foi possível validar o acesso ao formulário de produto.', error);
-			Alert.alert('Erro', 'Não foi possível validar seu acesso. Tente novamente.');
+			showGlobalNotification('Não foi possível validar seu acesso. Tente novamente.');
 		} finally {
 			setIsCheckingRole(false);
 		}

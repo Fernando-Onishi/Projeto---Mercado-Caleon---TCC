@@ -1,14 +1,15 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useFonts } from 'expo-font';
 import EvilIcons from '@expo/vector-icons/EvilIcons';
+import Feather from '@expo/vector-icons/Feather';
 import Fontisto from '@expo/vector-icons/Fontisto';
 import { sendPasswordResetEmail, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import {
 	Alert,
 	Image,
 	ImageBackground,
+	Keyboard,
 	KeyboardAvoidingView,
-	Platform,
 	ScrollView,
 	StyleSheet,
 	Text,
@@ -20,8 +21,17 @@ import {
 import { auth } from '../Config/FireBaseConfig';
 import { getHomeRouteByRole, getUserRole } from '../src/utils/getUserRole';
 import SafeAreaScreen from '../Componentes/SafeAreaScreen';
+import { themedStyles, tc } from '../Config/Tema';
 
 export default function TelaLogin({ navigation }) {
+	// Quando o teclado abre, rola até os campos para dar para ver o que está sendo digitado.
+	const scrollRef = useRef(null);
+	useEffect(() => {
+		const subscription = Keyboard.addListener('keyboardDidShow', () => {
+			setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
+		});
+		return () => subscription.remove();
+	}, []);
 	const { width: screenWidth, height: screenHeight } = useWindowDimensions();
 	const panelHorizontalPadding = screenWidth < 380 ? 20 : screenWidth >= 900 ? 32 : 24;
 	const contentMaxWidth = Math.min(screenWidth - panelHorizontalPadding * 2, 560);
@@ -36,6 +46,7 @@ export default function TelaLogin({ navigation }) {
 	});
 	const [email, setEmail] = useState('');
 	const [password, setPassword] = useState('');
+	const [showPassword, setShowPassword] = useState(false);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [feedback, setFeedback] = useState(null);
 
@@ -115,9 +126,11 @@ export default function TelaLogin({ navigation }) {
 			<SafeAreaScreen style={styles.safeArea}>
 				<KeyboardAvoidingView
 					style={styles.keyboardArea}
-					behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+					// No Android (tela inteira, edge-to-edge) a tela não encolhe sozinha: abre espaço para o teclado.
+					behavior="padding"
 				>
 					<ScrollView
+						ref={scrollRef}
 						contentContainerStyle={styles.scrollContent}
 						keyboardShouldPersistTaps="handled"
 						showsVerticalScrollIndicator={false}
@@ -130,7 +143,7 @@ export default function TelaLogin({ navigation }) {
 								accessibilityRole="button"
 								accessibilityLabel="Ajuda sobre o login"
 							>
-								<Fontisto name="question" size={16} color="black" accessibilityElementsHidden />
+								<Fontisto name="question" size={16} color={tc('black')} accessibilityElementsHidden />
 							</TouchableOpacity>
 							<Image
 								source={require('../assets/logo.png')}
@@ -144,11 +157,11 @@ export default function TelaLogin({ navigation }) {
 
 							<View style={[styles.fields, { maxWidth: contentMaxWidth }]}>
 								<View style={styles.inputContainer}>
-									<Fontisto name="email" size={18} color="black" style={styles.iconGlyph} accessibilityElementsHidden />
+									<Fontisto name="email" size={18} color={tc('black')} style={styles.iconGlyph} accessibilityElementsHidden />
 									<TextInput
 										style={styles.input}
 										placeholder="E-mail"
-										placeholderTextColor="#858b89"
+										placeholderTextColor={tc('#858b89')}
 										value={email}
 										onChangeText={(value) => {
 											setEmail(value);
@@ -161,20 +174,31 @@ export default function TelaLogin({ navigation }) {
 									/>
 								</View>
 								<View style={styles.inputContainer}>
-									<EvilIcons name="lock" size={26} color="black" style={styles.iconGlyph} accessibilityElementsHidden />
+									<EvilIcons name="lock" size={26} color={tc('black')} style={styles.iconGlyph} accessibilityElementsHidden />
 									<TextInput
 										style={styles.input}
 										placeholder="Senha"
-										placeholderTextColor="#858b89"
+										placeholderTextColor={tc('#858b89')}
 										value={password}
 										onChangeText={(value) => {
 											setPassword(value);
 											setFeedback(null);
 										}}
-										secureTextEntry
+										secureTextEntry={!showPassword}
 										autoComplete="current-password"
+										autoCapitalize="none"
+										autoCorrect={false}
 										accessibilityLabel="Senha"
 									/>
+									<TouchableOpacity
+										style={styles.passwordToggle}
+										onPress={() => setShowPassword((visible) => !visible)}
+										accessibilityRole="button"
+										accessibilityLabel={showPassword ? 'Esconder senha' : 'Mostrar senha'}
+										hitSlop={8}
+									>
+										<Feather name={showPassword ? 'eye' : 'eye-off'} size={20} color={tc('#757575')} />
+									</TouchableOpacity>
 								</View>
 							</View>
 
@@ -240,7 +264,7 @@ export default function TelaLogin({ navigation }) {
 	);
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(StyleSheet.create({
 	background: {
 		flex: 1,
 		width: '100%',
@@ -337,8 +361,15 @@ const styles = StyleSheet.create({
 		alignItems: 'center',
 		paddingHorizontal: 13,
 		borderRadius: 11,
-		backgroundColor: '#f5f5f5',
+		backgroundColor: '#FFFFFF',
 		elevation: 2,
+	},
+	passwordToggle: {
+		width: 40,
+		height: 40,
+		marginRight: -8,
+		alignItems: 'center',
+		justifyContent: 'center',
 	},
 	iconGlyph: {
 		width: 24,
@@ -407,4 +438,4 @@ const styles = StyleSheet.create({
 		lineHeight: 15,
 		textAlign: 'center',
 	},
-});
+}));

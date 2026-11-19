@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
+	arrayUnion,
 	collection,
 	doc,
 	onSnapshot,
@@ -11,23 +12,28 @@ import {
 	where,
 } from 'firebase/firestore';
 import { auth, db } from './FireBaseConfig';
-import { getProfileStorageKey } from './PerfilStorage';
-import { CART_STORAGE_KEY } from './ProdutoStorage';
+import { loadProfileData } from './PerfilStorage';
+import { CART_STORAGE_KEY, writeCart } from './ProdutoStorage';
 import { SERVICE_FEE, STORE, makePixTxid } from './Pagamento';
 
 export const ORDERS_COLLECTION = 'orders';
 
 // Etapas do pedido, na ordem em que o admin avança.
 export const ORDER_STEPS = [
-	{ key: 'recebido', label: 'Pedido Recebido', place: 'Mercado' },
-	{ key: 'preparando', label: 'Preparando', place: 'Mercado' },
-	{ key: 'pronto', label: 'Seu pedido está pronto para retirada', place: 'Mercado' },
-	{ key: 'retirado', label: 'Pedido retirado', place: 'Mercado' },
+	{ key: 'recebido', label: 'Pedido enviado', place: 'Aguardando o mercado aceitar' },
+	{ key: 'aceito', label: 'Pedido aceito', place: 'O mercado confirmou seu pedido' },
+	{ key: 'preparando', label: 'Sendo preparado', place: 'Separando seus produtos' },
+	{ key: 'pronto', label: 'Pronto para retirada', place: 'Pode vir buscar' },
+	{ key: 'retirado', label: 'Pedido retirado', place: 'Obrigado pela compra' },
 ];
 
+// Pedidos que ainda não ficaram prontos (contam como "na fila").
+export const OPEN_STATUSES = ['recebido', 'aceito', 'preparando'];
+
 export const ORDER_STATUS_LABELS = {
-	recebido: 'Recebido',
-	preparando: 'Preparando',
+	recebido: 'Aguardando aceite',
+	aceito: 'Aceito',
+	preparando: 'Sendo preparado',
 	pronto: 'Pronto para retirada',
 	retirado: 'Retirado',
 	cancelado: 'Cancelado',
@@ -85,51 +91,29 @@ export async function readCartSummary() {
 }
 
 async function readCustomerProfile(uid) {
-	try {
-		const stored = JSON.parse(await AsyncStorage.getItem(getProfileStorageKey(uid)) || '{}');
-		return stored && typeof stored === 'object' ? stored : {};
-	} catch {
-		return {};
-	}
+	// Perfil da conta (endereço, CEP, telefone), com o do aparelho como reserva.
+	return loadProfileData(uid);
 }
 
-// Converte o endereço/CEP do cliente em coordenadas (OpenStreetMap Nominatim). Se falhar, o mapa mostra só o mercado.
-async function geocodeCustomer({ address, cep }) {
-	const cepDigits = String(cep || '').replace(/\D/g, '');
-	const urls = [];
-	if (address) {
-		const text = cepDigits ? `${address}, ${cepDigits}, Brasil` : `${address}, Brasil`;
-		urls.push(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=br&q=${encodeURIComponent(text)}`);
-	}
-	if (cepDigits.length === 8) {
-		urls.push(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=br&postalcode=${cepDigits.slice(0, 5)}-${cepDigits.slice(5)}`);
-	}
-	for (const url of urls) {
-		try {
-			const response = await fetch(url, { headers: { 'User-Agent': 'CaleonApp/1.0', 'Accept-Language': 'pt-BR' } });
-			const [result] = await response.json();
-			const latitude = Number(result?.lat);
-			const longitude = Number(result?.lon);
-			if (Number.isFinite(latitude) && Number.isFinite(longitude)) return { latitude, longitude };
-		} catch {}
-	}
-	return null;
-}
 
 /**
  * Cria o pedido no Firestore a partir da sacola e esvazia a sacola.
  * payment: { method: 'pix' | 'visa' | 'mastercard', cardLast4? }
+ * pickupAt: Date — horário de retirada escolhido pelo cliente.
  */
-export async function createOrderFromCart(payment) {
+export async function createOrderFromCart(payment, pickupAt) {
 	const user = auth.currentUser;
 	if (!user) throw new Error('not-signed-in');
 	const { items, subtotal, serviceFee, total } = await readCartSummary();
 	if (items.length === 0) throw new Error('empty-cart');
 
+	if (!(pickupAt instanceof Date) || !Number.isFinite(pickupAt.getTime())) throw new Error('no-pickup-time');
+	// Horário que já passou (tela de pagamento aberta por muito tempo): pede outro.
+	if (pickupAt.getTime() < Date.now() + 10 * 60000) throw new Error('pickup-past');
+
 	const profile = await readCustomerProfile(user.uid);
 	const orderRef = doc(collection(db, ORDERS_COLLECTION));
 	const number = orderRef.id.slice(0, 6).toUpperCase();
-	const customerLocation = await geocodeCustomer(profile);
 	const isPix = payment.method === 'pix';
 
 	const order = {
@@ -139,7 +123,6 @@ export async function createOrderFromCart(payment) {
 		customerEmail: user.email || '',
 		customerAddress: profile.address || '',
 		customerCep: profile.cep || '',
-		customerLocation,
 		items: items.map((item) => ({
 			productId: item.productId || item.id,
 			nome: item.nome,
@@ -157,6 +140,7 @@ export async function createOrderFromCart(payment) {
 		cardLast4: isPix ? null : payment.cardLast4 || null,
 		pixTxid: isPix ? makePixTxid(number) : null,
 		pickup: { storeName: STORE.name, address: STORE.address, latitude: STORE.latitude, longitude: STORE.longitude },
+		pickupAt,
 		status: 'recebido',
 		statusHistory: { recebido: serverTimestamp() },
 		createdAt: serverTimestamp(),
@@ -164,7 +148,7 @@ export async function createOrderFromCart(payment) {
 	};
 
 	await setDoc(orderRef, order);
-	await AsyncStorage.setItem(CART_STORAGE_KEY, JSON.stringify([]));
+	await writeCart([]);
 	return { id: orderRef.id, ...order };
 }
 
@@ -178,7 +162,8 @@ export function subscribeToMyOrders(userId, onChange, onError) {
 	return onSnapshot(
 		query(collection(db, ORDERS_COLLECTION), where('userId', '==', userId)),
 		(snapshot) => {
-			const orders = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
+			// "estimate": horários recém-gravados pelo servidor já vêm com a hora estimada, em vez de vazios.
+			const orders = snapshot.docs.map((item) => ({ id: item.id, ...item.data({ serverTimestamps: 'estimate' }) }));
 			orders.sort((a, b) => (toDate(b.createdAt)?.getTime() || 0) - (toDate(a.createdAt)?.getTime() || 0));
 			onChange(orders);
 		},
@@ -210,6 +195,44 @@ export function updateOrderStatus(orderId, status) {
 export function updatePaymentStatus(orderId, paymentStatus) {
 	return updateDoc(doc(db, ORDERS_COLLECTION, orderId), {
 		paymentStatus,
+		// Data em que o dinheiro entrou: é ela que conta no faturamento do painel admin.
+		...(paymentStatus === 'confirmado' ? { paymentConfirmedAt: serverTimestamp() } : {}),
 		updatedAt: serverTimestamp(),
 	});
+}
+
+// Todos os pedidos (inclusive retirados e cancelados), para os números do painel admin.
+export function subscribeToAllOrders(onChange, onError) {
+	return onSnapshot(
+		query(collection(db, ORDERS_COLLECTION), orderBy('createdAt', 'asc')),
+		(snapshot) => onChange(snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))),
+		onError,
+	);
+}
+
+// ---------- Histórico do cliente ----------
+// "Excluir" um pedido do histórico só o esconde para o cliente: o pedido continua existindo para o
+// mercado (faturamento e métricas). A lista fica na conta (users/{uid}.hiddenOrders), igual em qualquer aparelho.
+
+export const FINISHED_STATUSES = ['retirado', 'cancelado'];
+
+export function isFinishedOrder(order) {
+	return FINISHED_STATUSES.includes(order?.status);
+}
+
+export function hideOrdersForClient(uid, orderIds) {
+	const ids = (orderIds || []).filter(Boolean);
+	if (!uid || !ids.length) return Promise.resolve();
+	return setDoc(doc(db, 'users', uid), { hiddenOrders: arrayUnion(...ids) }, { merge: true });
+}
+
+export function subscribeHiddenOrders(uid, onChange) {
+	if (!uid) {
+		onChange([]);
+		return () => {};
+	}
+	return onSnapshot(doc(db, 'users', uid), (snapshot) => {
+		const ids = snapshot.data()?.hiddenOrders;
+		onChange(Array.isArray(ids) ? ids : []);
+	}, () => onChange([]));
 }

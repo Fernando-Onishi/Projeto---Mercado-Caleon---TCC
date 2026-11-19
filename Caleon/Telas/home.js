@@ -1,10 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useFonts } from 'expo-font';
 import { onAuthStateChanged } from 'firebase/auth';
-import * as ImagePicker from 'expo-image-picker';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
-	ActivityIndicator,
 	Alert,
 	Animated,
 	FlatList,
@@ -19,22 +16,30 @@ import {
 	TouchableOpacity,
 	KeyboardAvoidingView,
 	Linking,
-	Platform,
 	useWindowDimensions,
 	View,
+	DeviceEventEmitter,
 } from 'react-native';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import Feather from '@expo/vector-icons/Feather';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
-import { deleteObject, getDownloadURL, ref, uploadBytes } from 'firebase/storage';
-import { auth, db, storage } from '../Config/FireBaseConfig';
-import BotaoSacola from '../Componentes/BotaoSacola';
-import { getProfileStorageKey } from '../Config/PerfilStorage';
-import { formatCurrency, formatProductUnit, getProductPrice, PRODUCTS } from '../Config/Produtos';
+import { collection, onSnapshot } from 'firebase/firestore';
+import { auth, db } from '../Config/FireBaseConfig';
+import CardProduto from '../Componentes/CardProduto';
+import LinkVerMais from '../Componentes/LinkVerMais';
+import CarrosselOfertas from '../Componentes/CarrosselOfertas';
+import CarrosselModal from '../Componentes/CarrosselModal';
+import { FotoMeuPerfil, useMeuPerfil } from '../Componentes/MeuPerfil';
+import { subscribeActiveBanners } from '../Config/Banners';
+import BotaoNotificacoesCliente from '../Componentes/BotaoNotificacoesCliente';
+import { loadProfileData, saveProfileData, subscribeProfileData } from '../Config/PerfilStorage';
+import { isCatalogSeeded } from '../Config/CatalogoFirebase';
+import { formatCurrency, formatProductUnit, getProductPrice, productImageFor, productName, PRODUCTS } from '../Config/Produtos';
 import {
 	addProductToCart,
 	getCartProductIds,
+	CART_CHANGED_EVENT,
+	FAVORITES_CHANGED_EVENT,
 	getFavorites,
 	removeProductFromCart,
 	toggleFavorite,
@@ -45,6 +50,7 @@ import { publishSacolaCount } from '../Componentes/useSacolaCount';
 import { showGlobalNotification } from '../Componentes/NotificacaoGlobal';
 import SafeAreaScreen from '../Componentes/SafeAreaScreen';
 import { getUserRole } from '../src/utils/getUserRole';
+import { themedStyles, tc } from '../Config/Tema';
 
 const colors = {
 	green: '#1B4B3D',
@@ -82,9 +88,9 @@ function mapStoredProduct(documentSnapshot) {
 	const product = {
 		...data,
 		id: documentSnapshot.id,
-		name: typeof data.name === 'string' ? data.name : '',
+		name: productName(data.name),
 		category: data.category === 'Horti-Fruti' ? 'HortiFruti' : data.category,
-		imageUrl: typeof data.imageUrl === 'string' ? data.imageUrl : '',
+		imageUrl: productImageFor(documentSnapshot.id, data.imageUrl, data.imageUrls),
 		pricePerKg,
 		originalPricePerKg: Number(data.originalPricePerKg) > pricePerKg ? Number(data.originalPricePerKg) : null,
 		averageWeightGrams: Number(data.averageWeightGrams) || defaultWeightGrams,
@@ -151,98 +157,16 @@ function formatCep(value) {
 	return digits.replace(/^(\d{5})(\d)/, '$1-$2');
 }
 
-// Alvos de toque mínimos recomendados para celular (Android 48dp / iOS 44pt).
-const MIN_TOUCH = 44;
-const MIN_HEART = 36;
-
-function ProductCard({ product, width, onOpen, onToggleCart, onToggleFavorite, isFavorite, isInCart }) {
-	const scale = width / 130;
-	const heartSize = Math.max(MIN_HEART, width * 0.17);
-
-	return (
-		<View style={[styles.productCard, {
-			width,
-			padding: width * 0.07,
-			borderRadius: width * 0.1,
-		}]}>
-			<TouchableOpacity onPress={onOpen} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel={`Ver detalhes de ${product.name}`}>
-				<View style={[styles.productImage, {
-					height: width * 0.56,
-					borderRadius: width * 0.06,
-				}]}>
-					<Image source={{ uri: product.imageUrl }} style={styles.productImageContent} resizeMode="contain" />
-					{product.discount ? <Text style={[styles.discount, {
-						left: 2 * scale,
-						top: 2 * scale,
-						fontSize: 9 * scale,
-						paddingHorizontal: 5 * scale,
-						paddingVertical: 2 * scale,
-						borderRadius: 15 * scale,
-					}]}>{product.discount}</Text> : null}
-					<TouchableOpacity
-						style={[styles.heartButton, isFavorite && styles.heartButtonActive, {
-							right: width * 0.05,
-							top: width * 0.05,
-							width: heartSize,
-							height: heartSize,
-							borderRadius: heartSize / 2,
-						}]}
-						hitSlop={6}
-						onPress={(event) => { event.stopPropagation(); onToggleFavorite(product.id); }}
-						accessibilityRole="button"
-						accessibilityLabel={`${isFavorite ? 'Remover' : 'Adicionar'} ${product.name} ${isFavorite ? 'dos' : 'aos'} favoritos`}
-					>
-						<MaterialCommunityIcons
-							name={isFavorite ? 'heart' : 'heart-outline'}
-							size={heartSize * 0.55}
-							color={colors.white}
-						/>
-					</TouchableOpacity>
-				</View>
-				<Text style={[styles.productName, { fontSize: 12 * scale, marginTop: 6 * scale }]} numberOfLines={1}>
-					{product.name} <Text style={[styles.weight, { fontSize: 8.5 * scale }]}>{product.weight}</Text>
-				</Text>
-				<View style={[styles.priceRow, { marginTop: 1 * scale }]}>
-					<Text style={[styles.price, { fontSize: 18 * scale, marginTop: 0 }]}>{product.price}</Text>
-					{product.originalPrice ? (
-						<Text style={[styles.originalPrice, { fontSize: 8.5 * scale }]}>
-							{product.originalPrice}
-						</Text>
-					) : null}
-				</View>
-			</TouchableOpacity>
-			<TouchableOpacity
-				style={[styles.addButton, isInCart && styles.addedButton, {
-					height: Math.max(MIN_TOUCH, width * 0.2),
-					borderRadius: width * 0.07,
-					marginTop: width * 0.04,
-				}]}
-				activeOpacity={0.8}
-				onPress={() => onToggleCart(product, isInCart)}
-				accessibilityRole="button"
-				accessibilityLabel={`${product.name}, ${isInCart ? 'remover da' : 'adicionar à'} sacola`}
-			>
-				<MaterialCommunityIcons name={isInCart ? 'shopping' : 'shopping-outline'} size={12 * scale} color={colors.white} />
-				<Text style={[styles.addButtonText, { fontSize: 9 * scale }]} numberOfLines={1} adjustsFontSizeToFit>
-					{isInCart ? 'Adicionado' : 'Adicionar à sacola'}
-				</Text>
-			</TouchableOpacity>
-		</View>
-	);
-}
-
-function ProductSection({ title, products: sectionProducts, cardWidth, navigation, favoriteIds, cartProductIds, onToggleFavorite, onToggleCart }) {
+function ProductSection({ title, products: sectionProducts, cardWidth, navigation, favoriteIds, cartProductIds, onToggleFavorite, onToggleCart, onSeeMore }) {
 	return (
 		<View style={styles.section}>
 			<View style={styles.sectionHeader}>
 				<Text style={[styles.sectionTitle, ['Em Destaque', 'Em Promoção', 'Produtos'].includes(title) && styles.productSectionTitle]}>{title}</Text>
-				<TouchableOpacity>
-					<Text style={styles.seeAll}>Ver mais ›</Text>
-				</TouchableOpacity>
+				{onSeeMore ? <LinkVerMais onPress={onSeeMore} accessibilityLabel={`Ver mais: ${title}`} /> : null}
 			</View>
 			<ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.productsRow}>
 				{sectionProducts.map((product) => (
-					<ProductCard
+					<CardProduto
 						product={product}
 						width={cardWidth}
 						onOpen={() => navigation.navigate('TelaDetalheProduto', { productId: product.id })}
@@ -261,7 +185,7 @@ function ProductSection({ title, products: sectionProducts, cardWidth, navigatio
 function EmptyProductsState() {
 	return (
 		<View style={styles.emptyProducts}>
-			<Feather name="search" size={40} color="#9CA3AF" />
+			<Feather name="search" size={40} color={tc('#9CA3AF')} />
 			<Text style={styles.emptyProductsTitle}>Nenhum produto encontrado</Text>
 			<Text style={styles.emptyProductsDescription}>
 				Não há produtos disponíveis nesta categoria ou busca no momento.
@@ -308,25 +232,31 @@ function BannerSlide({ banner, width, onPress }) {
 	);
 }
 
-function BannerCarousel({ banners, width, onBannerPress, isAdmin, isUpdatingBanner, onEditBanner }) {
+function BannerCarousel({ banners, width, onBannerPress, isAdmin, onEditBanner, offerProducts, onOpenProduct, onSeeOffers }) {
 	const [activeIndex, setActiveIndex] = useState(0);
 
 	useEffect(() => {
 		if (activeIndex >= banners.length) setActiveIndex(Math.max(0, banners.length - 1));
 	}, [activeIndex, banners.length]);
 
+	// Sem banners cadastrados pelo admin: mostra as ofertas reais do catálogo.
+	const editButton = isAdmin ? (
+		<TouchableOpacity
+			style={styles.editBannerButton}
+			onPress={() => onEditBanner()}
+			activeOpacity={0.7}
+			accessibilityRole="button"
+			accessibilityLabel="Editar carrossel de promoções"
+		>
+			<Feather name="edit-2" size={17} color={tc(colors.white)} />
+		</TouchableOpacity>
+	) : null;
+
 	if (banners.length === 0) {
 		return (
 			<View style={styles.promoCarousel}>
-				<View style={styles.promoEmptyState} accessibilityLabel="Nenhuma promoção ativa">
-					<View style={styles.promoEmptyIcon}>
-						<MaterialCommunityIcons name="tag-heart-outline" size={30} color="#FFE08A" />
-					</View>
-					<View style={styles.promoEmptyCopy}>
-						<Text style={styles.promoEmptyTitle}>Novas ofertas em breve</Text>
-						<Text style={styles.promoEmptyDescription}>Acompanhe aqui os próximos descontos</Text>
-					</View>
-				</View>
+				<CarrosselOfertas products={offerProducts || []} width={width} onOpenProduct={onOpenProduct} onSeeOffers={onSeeOffers} />
+				{editButton}
 			</View>
 		);
 	}
@@ -352,20 +282,7 @@ function BannerCarousel({ banners, width, onBannerPress, isAdmin, isUpdatingBann
 					/>
 				)}
 			/>
-			{isAdmin ? (
-				<TouchableOpacity
-					style={styles.editBannerButton}
-					onPress={() => onEditBanner(banners[activeIndex])}
-					disabled={isUpdatingBanner}
-					activeOpacity={0.7}
-					accessibilityRole="button"
-					accessibilityLabel="Alterar banner exibido"
-				>
-					{isUpdatingBanner
-						? <ActivityIndicator size="small" color={colors.white} />
-						: <Feather name="edit-2" size={17} color={colors.white} />}
-				</TouchableOpacity>
-			) : null}
+			{editButton}
 			{banners.length > 1 ? (
 				<View style={styles.promoDots} accessibilityLabel={`Banner ${activeIndex + 1} de ${banners.length}`}>
 					{banners.map((banner, index) => (
@@ -406,7 +323,7 @@ export function Produtos({ navigation }) {
 					<CircularIconButton
 						style={catalogStyles.backButton}
 						borderRadius={12}
-						icon={<Feather name="chevron-left" size={27} color="white" />}
+						icon={<Feather name="chevron-left" size={27} color={tc('white')} />}
 						onPress={() => {
 							if (navigation.canGoBack()) navigation.goBack();
 							else navigation.navigate('TelaHome');
@@ -414,7 +331,7 @@ export function Produtos({ navigation }) {
 						accessibilityLabel="Voltar"
 					/>
 					<Text style={catalogStyles.title}>Produtos</Text>
-					<BotaoSacola navigation={navigation} size={40} />
+					<BotaoNotificacoesCliente navigation={navigation} size={40} />
 				</View>
 				<FlatList
 					data={catalogCategories}
@@ -441,7 +358,7 @@ export function Produtos({ navigation }) {
 	);
 }
 
-const catalogStyles = StyleSheet.create({
+const catalogStyles = themedStyles(StyleSheet.create({
 	safeArea: { flex: 1, backgroundColor: colors.green },
 	topBand: { height: 40, backgroundColor: colors.green },
 	screen: { flex: 1, marginTop: -1, borderTopLeftRadius: 28, borderTopRightRadius: 28, backgroundColor: '#F1F3F5', overflow: 'hidden' },
@@ -454,11 +371,12 @@ const catalogStyles = StyleSheet.create({
 	card: { padding: 9, alignItems: 'center', justifyContent: 'space-between', borderRadius: 15, borderWidth: StyleSheet.hairlineWidth, borderColor: '#D1D6D4', backgroundColor: colors.white, shadowColor: '#525A57', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.14, shadowRadius: 5, elevation: 3 },
 	image: { width: '100%', flex: 1, borderRadius: 9 },
 	categoryName: { marginTop: 7, color: colors.ink, fontFamily: 'LilitaOne_400Regular', fontSize: 18, textAlign: 'center' },
-});
+}));
 
 export default function Home({ navigation, route }) {
 	const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 	const insets = useSafeAreaInsets();
+	const meuPerfil = useMeuPerfil();
 	// Cards proporcionais à tela: cerca de 2 cards visíveis por vez (o pedaço do próximo indica que dá para rolar).
 	const productCardWidth = Math.round(Math.min(200, Math.max(165, (windowWidth - 36) / 2.05)));
 	const [fontsLoaded] = useFonts({
@@ -476,15 +394,37 @@ export default function Home({ navigation, route }) {
 	const [isCepModalVisible, setIsCepModalVisible] = useState(false);
 	const [isFilterModalVisible, setIsFilterModalVisible] = useState(false);
 	const [searchText, setSearchText] = useState('');
-	const [selectedCategories, setSelectedCategories] = useState(['HortiFruti']);
+	// Começa sem filtro: a Home mostra todos os produtos; o cliente filtra por categoria se quiser.
+	const [selectedCategories, setSelectedCategories] = useState([]);
+
+	// "Ver mais": abre a lista completa. Com uma categoria escolhida, só ela; senão, todos os produtos.
+	function openSeeMore(onlyPromo) {
+		const single = selectedCategories.length === 1
+			? filterOptions.find((option) => option.category === selectedCategories[0])
+			: null;
+		navigation.navigate('ProdutosCategoriaScreen', single
+			? { categoria: single.name, promocao: onlyPromo }
+			: { todos: true, promocao: onlyPromo });
+	}
 	const [priceSortDirection, setPriceSortDirection] = useState(null);
 	const [promoBanners, setPromoBanners] = useState([]);
 	const [isAdmin, setIsAdmin] = useState(false);
-	const [isUpdatingBanner, setIsUpdatingBanner] = useState(false);
+	const [carouselEditorVisible, setCarouselEditorVisible] = useState(false);
 	const [products, setProducts] = useState(initialProducts);
 	const [favoriteIds, setFavoriteIds] = useState([]);
 	const [cartProductIds, setCartProductIds] = useState([]);
-	const bannerUpdateInProgress = useRef(false);
+
+	// Favoritos/sacola mudaram em outra tela ou em outro aparelho: coração e sacola atualizam na hora.
+	useEffect(() => {
+		const favoritesSubscription = DeviceEventEmitter.addListener(FAVORITES_CHANGED_EVENT, (ids) => setFavoriteIds(ids));
+		const cartSubscription = DeviceEventEmitter.addListener(CART_CHANGED_EVENT, (items) => {
+			setCartProductIds([...new Set(items.map((item) => item.productId).filter(Boolean))]);
+		});
+		return () => {
+			favoritesSubscription.remove();
+			cartSubscription.remove();
+		};
+	}, []);
 	const pendingCartProductIds = useRef(new Set());
 	const filterSheetTranslateY = useRef(new Animated.Value(0)).current;
 	const promoBannerWidth = Math.max(0, windowWidth - 36);
@@ -496,18 +436,8 @@ export default function Home({ navigation, route }) {
 	}, [route?.params?.categoria]);
 
 	useEffect(() => {
-		const bannersQuery = query(
-			collection(db, 'banners'),
-			where('ativo', '==', true),
-			orderBy('ordem', 'asc'),
-		);
-		return onSnapshot(
-			bannersQuery,
-			(snapshot) => {
-				setPromoBanners(snapshot.docs
-					.map((document) => ({ id: document.id, ...document.data() }))
-					.filter((banner) => typeof banner.imageUrl === 'string' && banner.imageUrl.length > 0));
-			},
+		return subscribeActiveBanners(
+			setPromoBanners,
 			(error) => {
 				console.error('Não foi possível carregar os banners promocionais.', error);
 			},
@@ -540,7 +470,8 @@ export default function Home({ navigation, route }) {
 	useEffect(() => onSnapshot(
 		collection(db, 'products'),
 		(snapshot) => {
-			const mergedProducts = new Map(initialProducts.map((product) => [product.id, product]));
+			// Depois que o admin enviou o catálogo ao Firebase, só vale o que está no Firestore (sincronizado entre aparelhos).
+			const mergedProducts = new Map(isCatalogSeeded(snapshot.docs) ? [] : initialProducts.map((product) => [product.id, product]));
 			snapshot.docs.forEach((productDocument) => {
 				if (productDocument.data().active === false) {
 					mergedProducts.delete(productDocument.id);
@@ -604,9 +535,8 @@ export default function Home({ navigation, route }) {
 
 		async function loadHeaderProfile(user) {
 			try {
-				const stored = JSON.parse(
-					await AsyncStorage.getItem(getProfileStorageKey(user?.uid)) || '{}',
-				);
+				// Endereço e CEP da conta (Firebase), iguais em qualquer celular.
+				const stored = await loadProfileData(user?.uid);
 				if (!active) return;
 				const displayName = user?.displayName?.trim()
 					|| (typeof stored.name === 'string' ? stored.name.trim() : '')
@@ -625,8 +555,12 @@ export default function Home({ navigation, route }) {
 			}
 		}
 
+		// Endereço/CEP mudaram em outro aparelho (ou no Perfil): o cabeçalho atualiza sozinho.
+		let stopProfile = () => {};
 		const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
 			loadHeaderProfile(user);
+			stopProfile();
+			stopProfile = subscribeProfileData(user?.uid, () => loadHeaderProfile(auth.currentUser));
 		});
 		const unsubscribeFocus = navigation.addListener('focus', () => {
 			loadHeaderProfile(auth.currentUser);
@@ -636,6 +570,7 @@ export default function Home({ navigation, route }) {
 			active = false;
 			unsubscribeAuth();
 			unsubscribeFocus();
+			stopProfile();
 		};
 	}, [navigation]);
 
@@ -673,28 +608,25 @@ export default function Home({ navigation, route }) {
 		const cepDigits = formattedCep.replace(/\D/g, '');
 
 		if (!trimmedAddress) {
-			Alert.alert('Endereço', 'Informe a rua e os dados do seu endereço.');
+			showGlobalNotification('Informe a rua e os dados do seu endereço.');
 			return;
 		}
 		if (cepDigits.length > 0 && cepDigits.length !== 8) {
-			Alert.alert('CEP inválido', 'Informe os 8 números do CEP.');
+			showGlobalNotification('Informe os 8 números do CEP.');
 			return;
 		}
 
 		try {
-			const profileKey = getProfileStorageKey(auth.currentUser?.uid);
-			const stored = JSON.parse(await AsyncStorage.getItem(profileKey) || '{}');
-			await AsyncStorage.setItem(profileKey, JSON.stringify({
-				...stored,
+			await saveProfileData(auth.currentUser?.uid, {
 				address: trimmedAddress,
 				cep: formattedCep,
-			}));
+			});
 			setAddress(trimmedAddress);
 			setCep(formattedCep);
 			setIsCepModalVisible(false);
 		} catch (error) {
 			console.error('Não foi possível salvar o endereço do perfil.', error);
-			Alert.alert('Endereço', 'Não foi possível salvar o endereço. Tente novamente.');
+			showGlobalNotification('Não foi possível salvar o endereço. Tente novamente.');
 		}
 	}
 
@@ -719,7 +651,7 @@ export default function Home({ navigation, route }) {
 			);
 		} catch (error) {
 			console.error('Erro ao atualizar a sacola:', error);
-			Alert.alert('Sacola', `Não foi possível ${isInCart ? 'remover o produto da' : 'adicionar o produto à'} sacola.`);
+			showGlobalNotification(`Não foi possível ${isInCart ? 'remover o produto da' : 'adicionar o produto à'} sacola.`);
 		} finally {
 			pendingCartProductIds.current.delete(product.id);
 		}
@@ -738,7 +670,7 @@ export default function Home({ navigation, route }) {
 				);
 			}
 		} catch {
-			Alert.alert('Favoritos', 'Não foi possível atualizar seus favoritos.');
+			showGlobalNotification('Não foi possível atualizar seus favoritos.');
 		}
 	}
 
@@ -786,6 +718,10 @@ export default function Home({ navigation, route }) {
 	}
 
 	function handleBannerPress(banner) {
+		if (banner.target === 'ofertas') {
+			navigation.navigate('ProdutosCategoriaScreen', { todos: true, promocao: true });
+			return;
+		}
 		const productId = banner.productId || banner.produtoId || banner.link;
 		const matchingProduct = products.find((product) => String(product.id) === String(productId));
 		if (matchingProduct) {
@@ -806,89 +742,8 @@ export default function Home({ navigation, route }) {
 		if (typeof banner.link === 'string' && /^https?:\/\//i.test(banner.link)) {
 			Linking.openURL(banner.link).catch((error) => {
 				console.error('Não foi possível abrir o link do banner.', error);
-				Alert.alert('Banner promocional', 'Não foi possível abrir o link.');
+				showGlobalNotification('Não foi possível abrir o link.');
 			});
-		}
-	}
-
-	async function handleEditBanner(banner) {
-		if (bannerUpdateInProgress.current) return;
-		if (!banner?.id) {
-			Alert.alert('Banner promocional', 'Não foi possível identificar o banner selecionado.');
-			return;
-		}
-
-		try {
-			const user = auth.currentUser;
-			if (!user || await getUserRole(user) !== 'admin') {
-				setIsAdmin(false);
-				Alert.alert('Acesso restrito', 'Somente um administrador pode alterar os banners.');
-				return;
-			}
-
-			const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-			if (!permission.granted) {
-				Alert.alert('Permissão necessária', 'Permita o acesso à galeria para selecionar o banner.');
-				return;
-			}
-
-			const result = await ImagePicker.launchImageLibraryAsync({
-				mediaTypes: ['images'],
-				allowsEditing: true,
-				quality: 0.85,
-			});
-			if (result.canceled) return;
-
-			const image = result.assets?.[0];
-			if (!image?.uri) {
-				Alert.alert('Banner promocional', 'Não foi possível carregar a imagem selecionada.');
-				return;
-			}
-
-			bannerUpdateInProgress.current = true;
-			setIsUpdatingBanner(true);
-			const extension = image.mimeType?.split('/')[1];
-			const imageRef = ref(
-				storage,
-				`banners/${banner.id}/${Date.now()}.${extension === 'png' || extension === 'webp' ? extension : 'jpg'}`,
-			);
-			let uploaded = false;
-			try {
-				const response = await fetch(image.uri);
-				if (!response.ok) throw new Error('Não foi possível ler a imagem selecionada.');
-				const blob = await response.blob();
-				try {
-					await uploadBytes(imageRef, blob, { contentType: image.mimeType || 'image/jpeg' });
-				} finally {
-					if (typeof blob.close === 'function') blob.close();
-				}
-				uploaded = true;
-				const imageUrl = await getDownloadURL(imageRef);
-				await updateDoc(doc(db, 'banners', banner.id), {
-					imageUrl,
-					updatedAt: serverTimestamp(),
-				});
-				setPromoBanners((currentBanners) => currentBanners.map((currentBanner) => (
-					currentBanner.id === banner.id
-						? { ...currentBanner, imageUrl }
-						: currentBanner
-				)));
-			} catch (error) {
-				if (uploaded) {
-					try {
-						await deleteObject(imageRef);
-					} catch (cleanupError) {
-						console.error('Não foi possível remover o upload incompleto do banner.', cleanupError);
-					}
-				}
-				throw error;
-			}
-		} catch (error) {
-			console.error('Não foi possível atualizar o banner promocional.', error);
-			Alert.alert('Banner promocional', 'Não foi possível atualizar o banner. Tente novamente.');
-		} finally {
-			bannerUpdateInProgress.current = false;
-			setIsUpdatingBanner(false);
 		}
 	}
 
@@ -904,12 +759,12 @@ export default function Home({ navigation, route }) {
 				<View style={[styles.header, { paddingTop: insets.top }]}>
 					<TouchableOpacity
 						style={styles.locationIcon}
-						onPress={openCepEditor}
+						onPress={() => navigation.navigate('TelaPerfil')}
 						activeOpacity={0.8}
 						accessibilityRole="button"
-						accessibilityLabel="Editar endereço e CEP"
+						accessibilityLabel="Abrir meu perfil"
 					>
-						<Feather name="map-pin" size={22} color={colors.white} />
+						<FotoMeuPerfil photo={meuPerfil.photo} size={40} />
 					</TouchableOpacity>
 					<View style={styles.locationText}>
 						<Text style={styles.greeting} numberOfLines={1}>Olá, {userName}</Text>
@@ -920,15 +775,17 @@ export default function Home({ navigation, route }) {
 							</Text>
 						</TouchableOpacity>
 					</View>
-					<BotaoSacola navigation={navigation} size={40} />
+					<View style={styles.headerActions}>
+						<BotaoNotificacoesCliente navigation={navigation} size={40} />
+					</View>
 				</View>
 
 				<View style={styles.contentArea}>
 					<View style={styles.searchBox}>
-						<Feather name="search" size={24} color="black" style={styles.searchIcon} />
+						<Feather name="search" size={24} color={tc('black')} style={styles.searchIcon} />
 						<TextInput
 							placeholder="Pesquise produtos, categorias"
-							placeholderTextColor="#8b9491"
+							placeholderTextColor={tc('#8b9491')}
 							style={styles.searchInput}
 							value={searchText}
 							onChangeText={setSearchText}
@@ -941,8 +798,10 @@ export default function Home({ navigation, route }) {
 						width={promoBannerWidth}
 						onBannerPress={handleBannerPress}
 						isAdmin={isAdmin}
-						isUpdatingBanner={isUpdatingBanner}
-						onEditBanner={handleEditBanner}
+						onEditBanner={() => setCarouselEditorVisible(true)}
+						offerProducts={products}
+						onOpenProduct={(product) => navigation.navigate('TelaDetalheProduto', { productId: product.id })}
+						onSeeOffers={() => navigation.navigate('ProdutosCategoriaScreen', { todos: true, promocao: true })}
 					/>
 					<ScrollView
 						horizontal
@@ -957,7 +816,7 @@ export default function Home({ navigation, route }) {
 							accessibilityRole="button"
 							accessibilityLabel="Abrir filtros de produtos"
 						>
-							<Feather name="sliders" size={17} color={colors.white} />
+							<Feather name="sliders" size={17} color={tc(colors.white)} />
 						</TouchableOpacity>
 						{filterOptions.map((option) => (
 							<TouchableOpacity
@@ -1009,9 +868,9 @@ export default function Home({ navigation, route }) {
 							<>
 								{displayedCategoryProducts.length > 0 ? (
 									<>
-										<ProductSection title="Em Destaque" products={displayedCategoryProducts} cardWidth={productCardWidth} navigation={navigation} favoriteIds={favoriteIds} cartProductIds={cartProductIds} onToggleFavorite={handleToggleFavorite} onToggleCart={handleToggleCart} />
-										<ProductSection title="Em Promoção" products={displayedCategoryProducts.filter((product) => product.discount)} cardWidth={productCardWidth} navigation={navigation} favoriteIds={favoriteIds} cartProductIds={cartProductIds} onToggleFavorite={handleToggleFavorite} onToggleCart={handleToggleCart} />
-										<ProductSection title="Produtos" products={displayedCategoryProducts} cardWidth={productCardWidth} navigation={navigation} favoriteIds={favoriteIds} cartProductIds={cartProductIds} onToggleFavorite={handleToggleFavorite} onToggleCart={handleToggleCart} />
+										<ProductSection title="Em Destaque" onSeeMore={() => openSeeMore(false)} products={displayedCategoryProducts} cardWidth={productCardWidth} navigation={navigation} favoriteIds={favoriteIds} cartProductIds={cartProductIds} onToggleFavorite={handleToggleFavorite} onToggleCart={handleToggleCart} />
+										<ProductSection title="Em Promoção" onSeeMore={() => openSeeMore(true)} products={displayedCategoryProducts.filter((product) => product.discount)} cardWidth={productCardWidth} navigation={navigation} favoriteIds={favoriteIds} cartProductIds={cartProductIds} onToggleFavorite={handleToggleFavorite} onToggleCart={handleToggleCart} />
+										<ProductSection title="Produtos" onSeeMore={() => openSeeMore(false)} products={displayedCategoryProducts} cardWidth={productCardWidth} navigation={navigation} favoriteIds={favoriteIds} cartProductIds={cartProductIds} onToggleFavorite={handleToggleFavorite} onToggleCart={handleToggleCart} />
 									</>
 								) : (
 									<EmptyProductsState />
@@ -1030,7 +889,7 @@ export default function Home({ navigation, route }) {
 			>
 				<KeyboardAvoidingView
 					style={styles.modalBackdrop}
-					behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+					behavior="padding"
 				>
 					<View style={styles.cepModal}>
 						<Text style={styles.cepModalTitle}>Editar endereço</Text>
@@ -1042,7 +901,7 @@ export default function Home({ navigation, route }) {
 							value={addressDraft}
 							onChangeText={setAddressDraft}
 							placeholder="Rua, número, bairro e cidade"
-							placeholderTextColor={colors.muted}
+							placeholderTextColor={tc(colors.muted)}
 							multiline
 							textAlignVertical="top"
 							maxLength={180}
@@ -1054,7 +913,7 @@ export default function Home({ navigation, route }) {
 							value={cepDraft}
 							onChangeText={(value) => setCepDraft(formatCep(value))}
 							placeholder="00000-000"
-							placeholderTextColor={colors.muted}
+							placeholderTextColor={tc(colors.muted)}
 							keyboardType="number-pad"
 							maxLength={9}
 							accessibilityLabel="CEP do endereço"
@@ -1116,7 +975,7 @@ export default function Home({ navigation, route }) {
 								accessibilityRole="button"
 								accessibilityLabel="Fechar filtros"
 							>
-								<Feather name="x" size={16} color={colors.white} />
+								<Feather name="x" size={16} color={tc(colors.white)} />
 							</TouchableOpacity>
 							<Text style={styles.filterTitle}>Filtros</Text>
 							<View style={styles.filterHeaderSpacer} />
@@ -1145,7 +1004,7 @@ export default function Home({ navigation, route }) {
 											? priceSortDirection === 'ascending' ? 'arrow-up' : 'arrow-down'
 											: item.icon}
 										size={34}
-										color={colors.green}
+										color={tc(colors.green)}
 									/>
 									<Text style={styles.filterOptionText} numberOfLines={1}>
 										{item.type === 'price'
@@ -1156,7 +1015,7 @@ export default function Home({ navigation, route }) {
 										<MaterialCommunityIcons
 											name="check-circle"
 											size={18}
-											color={colors.lightGreen}
+											color={tc(colors.lightGreen)}
 										/>
 									) : null}
 								</TouchableOpacity>
@@ -1168,11 +1027,12 @@ export default function Home({ navigation, route }) {
 
 			<NavegacaoInferior activeTab="Início" navigation={navigation} />
 			<View style={[styles.safeAreaBottom, { height: insets.bottom }]} />
+			{isAdmin ? <CarrosselModal visible={carouselEditorVisible} onClose={() => setCarouselEditorVisible(false)} /> : null}
 		</SafeAreaScreen>
 	);
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(StyleSheet.create({
 	safeArea: {
 		flex: 1,
 		backgroundColor: '#194B38',
@@ -1210,6 +1070,11 @@ const styles = StyleSheet.create({
 		alignItems: 'center',
 		justifyContent: 'center',
 		marginVertical: 16,
+	},
+	headerActions: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: 10,
 	},
 	locationText: {
 		flex: 1,
@@ -1673,4 +1538,4 @@ const styles = StyleSheet.create({
 		fontFamily: 'Montserrat_500Medium',
 	},
 
-});
+}));
